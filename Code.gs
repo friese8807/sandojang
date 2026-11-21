@@ -483,17 +483,22 @@ function top100Fetch_(page, rows) {
 }
 function debugTop100() { const r = top100Fetch_(1, 3); console.log('전체 ' + r.total + '건, 첫 줄:\n' + JSON.stringify(r.items[0], null, 1)); }
 function importTop100() {
-  const pick = (o, re) => { const k = Object.keys(o).find(k => re.test(k)); return k ? o[k] : ''; };
-  const have = rows_('산'), byName = {}; have.forEach(m => byName[m.name] = m);
+  // 실제 응답 칸 (2026-11 확인): frtrlNm 산명, frtrlId 산식별자, mtnCd 산코드, ctpvNm 시도명, addrNm 주소명, lat 위도, lot 경도, aslAltide 해발고도
+  const SIDO = { 강원특별자치도: '강원', 제주특별자치도: '제주', 전북특별자치도: '전북', 충청북도: '충북', 충청남도: '충남', 전라북도: '전북', 전라남도: '전남', 경상북도: '경북', 경상남도: '경남' };
+  const short = v => SIDO[v] || String(v || '').replace(/특별자치시|특별시|광역시|도$/, '');
+  const have = rows_('산'), codes = {}; have.forEach(m => { if (m.code) codes[m.code] = 1; });
   let page = 1, n = 0, all = [];
   while (page < 20) { const r = top100Fetch_(page, 20); all = all.concat(r.items); if (!r.items.length || all.length >= r.total) break; page++; }
   all.forEach(o => {
-    const name = String(pick(o, /^(mntn|frtrl|mtn).*nm$|^mntnnm$|name|nm$/i) || '').trim();
-    const lat = +pick(o, /^lat|lat$|^la$|ycrd|ypos/i), lon = +pick(o, /^lo?n|lot$|^lo$|lng|xcrd|xpos/i);
-    const alt = Math.round(+pick(o, /hg|height|alt|aslAltd|hght/i) || 0), region = String(pick(o, /addr|adres|loc|sido|ctpv/i) || '').split(' ').slice(0, 2).join(' ');
-    if (!name || byName[name]) return;
-    append_('산', { id: newId_('m'), name, region, alt, lat: isFinite(lat) && lat > 30 ? lat : '', lon: isFinite(lon) && lon > 120 ? lon : '', top100: 'true', kind: '산', by: 'data.go.kr', code: String(pick(o, /cd$|code|id$/i) || '') });
-    byName[name] = 1; n++;
+    const name = String(o.frtrlNm || '').trim(), code = String(o.frtrlId || o.mtnCd || ''), lat = +o.lat, lon = +o.lot;
+    if (!name || codes[code]) return;
+    // 직접 넣어 둔 같은 산(이름 같고 3km 안)은 새로 만들지 않고 산 번호만 붙인다
+    const same = have.find(m => !m.code && m.name.replace(/\s.*$/, '') === name && m.lat !== '' && km_(+m.lat, +m.lon, lat, lon) < 3);
+    if (same) { set_('산', same._row, 'code', code); set_('산', same._row, 'top100', 'true'); codes[code] = 1; return; }
+    const sgg = (String(o.addrNm || '').split(/\s+/)[1] || '').replace(/[·,].*$/, '');
+    append_('산', { id: newId_('m'), name, region: [short(o.ctpvNm), sgg].filter(String).join(' '), alt: Math.round(+o.aslAltide || 0),
+      lat: lat > 32 && lat < 39.5 ? lat : '', lon: lon > 124 && lon < 132 ? lon : '', top100: 'true', kind: '산', by: 'data.go.kr', code });
+    codes[code] = 1; n++;
   });
   console.log('✓ 새로 넣은 산 ' + n + '곳 (받은 자료 ' + all.length + '건)');
 }
