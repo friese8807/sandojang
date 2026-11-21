@@ -1,0 +1,1365 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>산도장</title>
+<meta name="robots" content="noindex, nofollow">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="산도장">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="theme-color" content="#d6e9f7" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1a2c3c" media="(prefers-color-scheme: dark)">
+<meta name="referrer" content="strict-origin-when-cross-origin">
+<link rel="apple-touch-icon" sizes="180x180" href="icon-180-v1.png">
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192-v1.png">
+<link rel="manifest" href="manifest.webmanifest?v=1">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" onerror="void 0"></script>
+<style>
+/* ═══ app-kit.css — 모바일 웹앱 공통 (화면 채우기 · 로딩 · 스와이프 · 시트) ═══
+   색은 :root 의 토큰만 바꿔서 앱마다 맞춘다. --solid 는 탭바/하단 띠 색이며 html 배경과 같아야 한다. */
+:root{
+  --bg:#f3f5f8; --solid:#ffffff; --ink:#12151c; --muted:#6b7280; --line:rgba(18,21,28,.10);
+  --accent:#3b6cf6; --danger:#e5484d;
+  --sat:env(safe-area-inset-top,0px); --sab:env(safe-area-inset-bottom,0px);
+  --sal:env(safe-area-inset-left,0px); --sar:env(safe-area-inset-right,0px);
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root{ --bg:#10141b; --solid:#171c25; --ink:#f2f4f8; --muted:#9aa3b2; --line:rgba(255,255,255,.12); color-scheme:dark; }
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+
+/* ── 1. 화면 채우기 (위아래 공백 제거) ──
+   · html 배경 = 하단 띠 색(--solid): 아이폰이 그리지 않는 맨 아래 칸이 탭바와 이어져 보인다.
+   · 문서는 스크롤하지 않고(#sc 만 스크롤) 탭바는 fixed 가 아닌 flex 맨 아래 칸에 둔다.
+   · --app-h 는 app-kit.js 의 fixViewport() 가 실제 화면 높이로 넣어 준다. */
+html{height:100%;background:var(--solid);overflow:hidden}
+body{margin:0;height:var(--app-h,100%);overflow:hidden;display:flex;flex-direction:column;
+  background:var(--bg);color:var(--ink);overscroll-behavior:none;-webkit-text-size-adjust:100%;
+  font-family:-apple-system,BlinkMacSystemFont,"Apple SD Gothic Neo","Pretendard","Noto Sans KR",system-ui,sans-serif;
+  -webkit-font-smoothing:antialiased;letter-spacing:-.01em}
+.ak-top{flex:none;display:flex;align-items:center;gap:8px;background:var(--bg);
+  padding:calc(8px + var(--sat)) max(16px,var(--sar)) 8px max(16px,var(--sal))}
+.ak-top h1{flex:1;margin:0;font-size:20px;font-weight:800}
+#sc{flex:1 1 auto;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-y:contain;
+  padding:4px max(16px,var(--sar)) 20px max(16px,var(--sal))}
+.ak-tabs{flex:none;display:flex;background:var(--solid);border-top:1px solid var(--line);
+  padding:6px max(8px,var(--sar)) max(6px,calc(var(--sab) - 14px)) max(8px,var(--sal))}
+.ak-tabs button{flex:1;border:0;background:none;font:inherit;font-size:11px;font-weight:600;color:var(--muted);
+  padding:6px 0;display:grid;gap:2px;justify-items:center;cursor:pointer}
+.ak-tabs button .i{font-size:20px;line-height:1}
+.ak-tabs button.on{color:var(--accent)}
+/* 아이폰은 16px 보다 작은 입력칸을 누르면 화면을 확대한다 */
+input,select,textarea{font-size:16px}
+/* 키보드가 올라와 있는 동안 아래 여백 (AppKit.keyboardSafe) */
+body.kb #sc{padding-bottom:50vh}
+button{touch-action:manipulation}
+
+/* ── 2. 로딩 ── */
+/* 2-1 첫 화면: JS 가 뜨기 전부터 보이는 아이콘 + 문구 */
+.ak-boot{position:fixed;inset:0;z-index:100;display:grid;place-items:center;background:var(--bg);text-align:center;transition:opacity .25s}
+.ak-boot.out{opacity:0;pointer-events:none}
+.ak-boot img{width:84px;height:84px;border-radius:20px;animation:ak-breathe 1.6s ease-in-out infinite}
+.ak-boot p{margin:14px 0 0;color:var(--muted);font-size:14px}
+@keyframes ak-breathe{50%{transform:scale(.94);opacity:.75}}
+/* 2-2 누른 동작 처리 중: 위쪽 진행 막대 + 알약 + 누른 버튼 스피너 */
+.ak-bar{position:fixed;left:0;right:0;top:0;height:3px;z-index:60;pointer-events:none;opacity:0;transition:opacity .2s;overflow:hidden;
+  background:color-mix(in srgb,var(--accent) 18%,transparent)}
+.ak-bar.on{opacity:1}
+.ak-bar::before{content:"";position:absolute;top:0;bottom:0;width:40%;left:-40%;border-radius:3px;background:var(--accent);animation:ak-bar 1.1s ease-in-out infinite}
+@keyframes ak-bar{to{left:100%}}
+.ak-pill,.ak-toast{position:fixed;left:50%;bottom:calc(84px + var(--sab));z-index:61;transform:translate(-50%,12px);opacity:0;pointer-events:none;
+  transition:opacity .2s,transform .2s;background:var(--ink);color:var(--bg);font-size:13.5px;font-weight:600;
+  padding:9px 16px;border-radius:999px;white-space:nowrap;max-width:calc(100vw - 32px);overflow:hidden;text-overflow:ellipsis;
+  box-shadow:0 6px 24px rgba(0,0,0,.22)}
+.ak-pill{display:flex;align-items:center;gap:8px}
+.ak-pill.on,.ak-toast.on{opacity:1;transform:translate(-50%,0)}
+.ak-pill.top{top:calc(14px + var(--sat));bottom:auto}
+.ak-pill .e{display:inline-block;animation:ak-hop .5s ease-in-out infinite alternate}
+@keyframes ak-hop{from{transform:translateY(0) rotate(-6deg)}to{transform:translateY(-4px) rotate(6deg)}}
+.ak-pill .d i{display:inline-block;width:4px;height:4px;margin-left:3px;border-radius:50%;background:currentColor;animation:ak-dot 1.2s infinite}
+.ak-pill .d i:nth-child(2){animation-delay:.2s}.ak-pill .d i:nth-child(3){animation-delay:.4s}
+@keyframes ak-dot{0%,80%,100%{opacity:.25}40%{opacity:1}}
+.is-busy{position:relative;pointer-events:none;opacity:.6}
+.is-busy::after{content:"";position:absolute;right:12px;top:50%;width:16px;height:16px;margin-top:-8px;border-radius:50%;
+  border:2px solid currentColor;border-right-color:transparent;animation:ak-spin .7s linear infinite}
+/* 2-3 배경 새로고침: 새로고침 아이콘만 돈다 */
+.ak-icon-btn{border:0;background:none;color:inherit;font-size:20px;width:40px;height:40px;border-radius:50%;cursor:pointer;display:inline-grid;place-items:center;padding:0}
+/* 아이콘만 정확히 가운데 축으로 돈다 (버튼째 돌리면 꿀렁거림) */
+.ak-icon-btn svg{display:block;transform-origin:50% 50%;will-change:transform}
+.ak-spin{animation:ak-spin .8s linear infinite}
+@keyframes ak-spin{to{transform:rotate(360deg)}}
+
+/* ── 3. 스와이프 ── */
+.ak-in-l{animation:ak-in-l .22s ease-out}.ak-in-r{animation:ak-in-r .22s ease-out}
+@keyframes ak-in-l{from{transform:translateX(28px);opacity:0}}
+@keyframes ak-in-r{from{transform:translateX(-28px);opacity:0}}
+.ak-hscroll{overflow-x:auto;scrollbar-width:none;touch-action:pan-x;overscroll-behavior:contain}
+.ak-hscroll::-webkit-scrollbar{display:none}
+
+/* ── 4. 바텀시트 (끌어서 열고 닫기) ── */
+.ak-scrim{position:fixed;inset:0;z-index:40;background:rgba(0,0,0,.4);opacity:0;pointer-events:none;transition:opacity .25s}
+.ak-scrim.on{opacity:1;pointer-events:auto}
+.ak-sheet{position:fixed;left:0;right:0;bottom:0;z-index:41;max-height:88%;max-width:560px;margin:0 auto;display:flex;flex-direction:column;
+  background:var(--solid);border-radius:22px 22px 0 0;transform:translateY(105%);transition:transform .3s cubic-bezier(.2,.8,.2,1);
+  padding:0 max(18px,var(--sar)) calc(18px + var(--sab)) max(18px,var(--sal))}
+.ak-sheet.on{transform:translateY(0)}
+.ak-sheet.dragging{transition:none}
+/* 시트 아래로 같은 색을 이어 붙여 아이폰 하단 틈을 가린다 */
+.ak-sheet::after{content:"";position:absolute;left:0;right:0;top:calc(100% - 1px);height:200px;background:var(--solid)}
+.ak-grab{flex:none;padding:8px 0 12px;touch-action:none;cursor:grab}
+.ak-grab::before{content:"";display:block;width:40px;height:5px;border-radius:9px;margin:0 auto;background:color-mix(in srgb,var(--ink) 18%,transparent)}
+.ak-sheet .body{overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain}
+
+@media (prefers-reduced-motion:reduce){
+  .ak-bar::before,.ak-pill .e,.ak-pill .d i,.is-busy::after,.ak-spin,.ak-boot img{animation-duration:2.5s}
+  .ak-in-l,.ak-in-r{animation:none}.ak-sheet,.ak-scrim{transition:none}
+}
+
+/* ── 5. 상태·오류·예시 표시 ── */
+/* 숫자는 자릿수가 흔들리지 않게 */
+.num{font-variant-numeric:tabular-nums}
+/* 갱신 상태: <span class="ak-status"><i class="ak-dot live"></i>14:32 갱신</span> */
+.ak-status{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--muted)}
+.ak-dot{width:7px;height:7px;border-radius:50%;background:var(--muted)}
+.ak-dot.live{background:#22c55e;animation:ak-pulse 1.8s infinite}
+.ak-dot.off{background:var(--danger)}
+@keyframes ak-pulse{0%{box-shadow:0 0 0 0 rgba(34,197,94,.5)}70%{box-shadow:0 0 0 6px rgba(34,197,94,0)}100%{box-shadow:0 0 0 0 rgba(34,197,94,0)}}
+/* 예시 데이터로 보는 중 */
+.ak-demo{flex:none;background:var(--ink);color:var(--bg);text-align:center;font-size:12.5px;padding:calc(6px + var(--sat)) 6px 6px}
+.ak-demo:not([hidden]) + .ak-top{padding-top:8px}
+/* 앱 오류 */
+.ak-err{flex:none;background:var(--danger);color:#fff;font-size:12.5px;line-height:1.4;padding:calc(6px + var(--sat)) 12px 6px;overflow-wrap:anywhere}
+/* 빈 화면·불러오기 실패 */
+.ak-empty{text-align:center;color:var(--muted);font-size:14px;line-height:1.6;padding:36px 16px}
+/* 설명 글은 가운데 정렬 + 낱말 중간에서 끊지 않기(한글 기본값은 글자 단위로 끊긴다) + 줄 길이 고르게.
+   칸보다 긴 낱말(주소·코드)만 그 안에서 끊는다. 손으로 <br>을 넣어 맞추지 않는다 */
+.ak-center,.note,.ak-empty,.ak-demo{word-break:keep-all;overflow-wrap:break-word;text-wrap:balance}
+.ak-center,.note{text-align:center}
+.ak-empty button{margin-top:12px;border:1px solid var(--line);background:var(--solid);color:var(--ink);font:inherit;font-weight:600;border-radius:10px;padding:8px 16px}
+/* 선 아이콘: <svg class="ak-ic" viewBox="0 0 24 24"><path …/></svg> — 글자색을 따라간다 */
+.ak-ic{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+@media (prefers-reduced-motion:reduce){.ak-dot.live{animation:none}}
+/* ── 색: 파스텔 '하늘'(A) 기본, 숲(F)은 시안용 ── */
+:root{ --bg:#f3f8fc; --top-bg:#d6e9f7; --top-ink:#1f4d70; --accent:#4f93c9; --on-accent:#fff; --chip:#e9f2fa; --title:#2a6fa8;
+  --land:#e3eef7; --land-line:#bcd5ea; --sea:#f7fbfe;
+  --p-go:#dff3e4; --p-go-ink:#1f6b35; --p-warn:#fdf0d5; --p-warn-ink:#8a5a00; --p-stop:#fde2e2; --p-stop-ink:#a12d2d; --p-violet:#ece6fb; --p-violet-ink:#5b3fa8; }
+@media (prefers-color-scheme:dark){ :root{ --bg:#0f1a24; --solid:#152230; --top-bg:#1a2c3c; --top-ink:#cfe5f6; --accent:#8cc2ea; --on-accent:#0d2436; --chip:#1c2e3e; --title:#9fcdf0;
+  --land:#1d3142; --land-line:#2c4a63; --sea:#122130;
+  --p-go:#183a24; --p-go-ink:#9fe0b0; --p-warn:#3d2f12; --p-warn-ink:#f3cf86; --p-stop:#3f1d1d; --p-stop-ink:#f5aaaa; --p-violet:#2a2342; --p-violet-ink:#c9b8f7; } }
+
+.ak-top{background:var(--top-bg);color:var(--top-ink);padding-bottom:10px}
+.ak-top h1{font-size:21px;letter-spacing:-.02em}
+.ak-top .ak-status{color:inherit;opacity:.75}
+.bell{position:relative}
+.bell em{position:absolute;top:4px;right:4px;min-width:17px;height:17px;border-radius:9px;background:var(--danger);color:#fff;font:700 10px/17px system-ui;font-style:normal;text-align:center;padding:0 4px}
+#sc{padding-top:12px}
+.ak-tabs button.on{color:var(--accent)}
+.ak-ic{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.ak-tabs .ak-ic{width:24px;height:24px}
+
+.card{background:var(--solid);border:1px solid var(--line);border-radius:18px;padding:14px 16px;margin:0 0 12px}
+.sec{display:flex;align-items:center;gap:8px;margin:18px 2px 8px;font-size:15px;font-weight:800}
+.sec small{margin-left:auto;font-weight:600;color:var(--muted);font-size:12px}
+.sec::before{content:"";width:4px;height:15px;border-radius:2px;background:var(--accent)}
+.muted{color:var(--muted)}
+.note{color:var(--muted);font-size:12.5px;line-height:1.55;margin:8px 4px}
+.btn{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;min-height:46px;border:0;border-radius:13px;background:var(--accent);color:var(--on-accent);font:inherit;font-weight:700;font-size:15px;padding:10px 14px;cursor:pointer}
+.btn.ghost{background:var(--solid);color:var(--ink);border:1px solid var(--line)}
+.btn.sm{min-height:38px;font-size:13.5px;border-radius:11px;width:auto;padding:6px 12px}
+.btn .sub{display:block;font-size:11px;font-weight:500;color:var(--muted)}
+.row2{display:flex;gap:8px}.row2>*{flex:1}
+.chips{display:flex;gap:6px;overflow-x:auto;margin:0 0 10px;padding-bottom:2px;scrollbar-width:none}
+.chip{flex:none;border:0;border-radius:999px;background:var(--chip);color:var(--ink);font:inherit;font-size:13px;font-weight:600;padding:7px 13px;cursor:pointer}
+.chip.on{background:var(--accent);color:var(--on-accent)}
+.seg{display:flex;background:var(--chip);border-radius:12px;padding:3px;margin:0 0 12px}
+.seg button{flex:1;border:0;background:none;font:inherit;font-size:13.5px;font-weight:700;color:var(--muted);padding:8px 0;border-radius:9px;cursor:pointer}
+.seg button.on{background:var(--solid);color:var(--ink);box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.tag{display:inline-flex;align-items:center;gap:3px;border-radius:7px;padding:2px 7px;font-size:11.5px;font-weight:700;background:var(--chip);color:var(--muted);white-space:nowrap}
+.tag.go{background:var(--p-go);color:var(--p-go-ink)}.tag.warn{background:var(--p-warn);color:var(--p-warn-ink)}
+.tag.vio{background:var(--p-violet);color:var(--p-violet-ink)}.tag.dd{background:var(--accent);color:var(--on-accent)}
+.av{display:inline-grid;place-items:center;width:28px;height:28px;border-radius:50%;background:var(--c,#999);color:#fff;font-size:13px;font-weight:800;font-style:normal;border:2px solid var(--solid);flex:none;letter-spacing:-.04em}
+.avs{display:inline-flex}.avs .av+.av{margin-left:-8px}
+.bar{height:8px;border-radius:4px;background:var(--chip);overflow:hidden}.bar i{display:block;height:100%;border-radius:4px;background:var(--accent)}
+
+/* 정복 지도(그림 지도) — 외부 지도 없이 바로 그려지는 우리나라 윤곽 */
+.krmap{display:block;width:100%;height:auto}
+.krmap .land{fill:var(--land);stroke:var(--land-line);stroke-width:1.5}
+.krmap .d0{fill:var(--muted);opacity:.35}
+.krmap .d1{fill:var(--solid);stroke:var(--accent);stroke-width:3}
+.krmap .d2{fill:var(--accent);stroke:var(--solid);stroke-width:3}
+.krmap .nx{fill:#e8833a;stroke:var(--solid);stroke-width:3}
+.krmap text{font:700 15px system-ui;fill:var(--ink);paint-order:stroke;stroke:var(--solid);stroke-width:4px}
+.legend{display:flex;justify-content:center;gap:14px;font-size:12px;color:var(--muted);margin-top:4px}
+.legend i{display:inline-block;width:9px;height:9px;border-radius:50%;margin-right:4px;vertical-align:-1px}
+
+/* 홈 A */
+.hero{position:relative;padding:10px 12px 10px;background:linear-gradient(180deg,var(--sea),var(--solid))}
+.hero .krmap{max-height:300px;margin:0 auto;width:auto}
+.hero-t{position:absolute;left:16px;top:14px;font-size:13px;font-weight:700;color:var(--muted);line-height:1.5}
+.hero-t b{display:block;font-size:30px;color:var(--title);line-height:1.1}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:4px}
+.stat{background:var(--solid);border:1px solid var(--line);border-radius:15px;padding:11px 8px;text-align:center}
+.stat b{display:block;font-size:24px;font-weight:800;color:var(--title);letter-spacing:-.03em}
+.stat b small{font-size:13px;color:var(--muted);font-weight:700}
+.stat span{font-size:12px;color:var(--muted);font-weight:600}
+.trip{display:block;width:100%;text-align:left;font:inherit;color:inherit;cursor:pointer}
+.trip .tl{display:flex;gap:6px;align-items:center;margin-bottom:6px}
+.trip h4{margin:0 0 3px;font-size:17px;color:var(--title)}
+.trip .meta{font-size:13px;color:var(--muted);margin-bottom:10px}
+.trip .pg{display:grid;grid-template-columns:auto 1fr auto;gap:6px 10px;align-items:center;font-size:12.5px;color:var(--muted);background:var(--chip);border-radius:12px;padding:9px 11px}
+.trip .pg b{color:var(--ink);font-size:12.5px}
+.feed{padding:4px 14px}
+.fi{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);cursor:pointer}
+.fi:last-child{border-bottom:0}
+.fi .t{flex:1;min-width:0;font-size:14px;line-height:1.35}
+.fi .t b{font-weight:700}.fi .t small{display:block;color:var(--muted);font-size:12px}
+.fi img{width:44px;height:44px;border-radius:10px;object-fit:cover;flex:none}
+
+/* 사진 격자 */
+.pgrid{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;border-radius:14px;overflow:hidden}
+.pgrid img{width:100%;aspect-ratio:1;object-fit:cover;display:block;cursor:pointer;background:var(--chip)}
+
+
+/* 산 목록 */
+.mapbox{position:relative;height:260px;border-radius:18px;overflow:hidden;border:1px solid var(--line);margin-bottom:12px;background:var(--sea)}
+.mapbox .krmap{height:100%;width:auto;margin:0 auto}
+.mapbox .mk-canvas{position:absolute;inset:0}
+.mk-tools{position:absolute;right:8px;top:8px;z-index:500;display:grid;gap:4px}
+.mk-tools button{width:36px;height:36px;border:0;border-radius:10px;background:var(--solid);color:var(--ink);box-shadow:0 1px 4px rgba(0,0,0,.15);font:700 16px system-ui;display:grid;place-items:center}
+.mk-tools button.txt{font-size:11px}
+.mpin{position:absolute;transform:translate(-50%,-50%);display:flex;align-items:center;gap:4px;white-space:nowrap}
+.mpin i{width:14px;height:14px;border-radius:50%;background:var(--accent);border:2px solid #fff;box-shadow:0 1px 3px rgba(0,0,0,.3)}
+.mpin.f i{background:#fff;border-color:var(--accent)}.mpin.n i{width:9px;height:9px;background:#8a96a3}
+.mpin b{font-size:11px;background:rgba(255,255,255,.9);color:#12151c;border-radius:5px;padding:1px 4px}
+.medot{width:16px;height:16px;border-radius:50%;background:#2f80ed;border:3px solid #fff;transform:translate(-50%,-50%);box-shadow:0 0 0 6px rgba(47,128,237,.25)}
+.mt{display:flex;gap:12px;align-items:center;cursor:pointer}
+.mt .ico{width:44px;height:44px;border-radius:13px;background:var(--chip);display:grid;place-items:center;color:var(--title);flex:none}
+.mt.done .ico{background:var(--accent);color:var(--on-accent)}
+.mt .t{flex:1;min-width:0}
+.mt h4{margin:0 0 3px;font-size:16px;color:var(--title);display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.mt p{margin:0;font-size:12.5px;color:var(--muted)}
+.list .card{padding:12px 14px;margin-bottom:8px}
+
+/* 시트 */
+.sh-h{margin:0 0 2px;font-size:21px}
+.sh-sub{color:var(--muted);font-size:13px;margin-bottom:12px}
+.kv{display:grid;grid-template-columns:auto 1fr auto;gap:8px 10px;align-items:center;font-size:14px}
+.result{border-radius:14px;padding:12px 14px;margin:10px 0;font-size:14px;line-height:1.5;word-break:keep-all}
+.result b{display:block;font-size:16px;margin-bottom:2px}
+.result.go{background:var(--p-go);color:var(--p-go-ink)}.result.warn{background:var(--p-warn);color:var(--p-warn-ink)}.result.stop{background:var(--p-stop);color:var(--p-stop-ink)}
+.ck{display:flex;align-items:center;gap:10px;padding:10px 2px;border-bottom:1px solid var(--line);font-size:15px;cursor:pointer}
+.ck:last-child{border-bottom:0}
+.ck .box{width:22px;height:22px;border-radius:7px;border:2px solid var(--line);display:grid;place-items:center;flex:none}
+.ck.on .box{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.ck.on .nm{color:var(--muted);text-decoration:line-through}
+.ck .nm{flex:1}
+.gear{padding:10px 0;border-bottom:1px solid var(--line)}
+.gear:last-child{border-bottom:0}
+.gear .nm{font-size:15px;font-weight:700;margin-bottom:6px;display:flex;justify-content:space-between}
+.gear .who{display:flex;gap:6px;flex-wrap:wrap}
+.gear .who button{border:1px solid var(--line);background:var(--solid);color:var(--ink);border-radius:999px;font:inherit;font-size:13px;padding:4px 10px 4px 4px;display:flex;align-items:center;gap:5px;cursor:pointer}
+.gear .who button .av{width:22px;height:22px;font-size:11px;border:0}
+.gear .who button.on{background:var(--accent);color:var(--on-accent);border-color:var(--accent)}
+.cat{font-size:12.5px;font-weight:800;color:var(--muted);margin:14px 2px 2px}
+.field{display:block;margin:0 0 12px}
+.field span{display:block;font-size:13px;font-weight:700;color:var(--muted);margin:0 0 5px 2px}
+.field input,.field select{width:100%;border:1px solid var(--line);background:var(--solid);color:var(--ink);border-radius:12px;padding:11px 12px;font:inherit;font-size:16px}
+.bigimg{width:100%;border-radius:14px;display:block;margin-bottom:10px}
+.diag{color:var(--muted);font-size:11px;line-height:1.5;margin-top:16px;text-align:center}
+.mini{font-size:12px;color:var(--muted)}
+.hidden-file{position:fixed;left:-999px;opacity:0}
+.gate{position:fixed;inset:0;z-index:60;background:var(--bg);display:flex;align-items:center;justify-content:center;padding:calc(24px + var(--sat)) 20px calc(24px + var(--sab));overflow-y:auto}
+.gate[hidden]{display:none}
+.gate .box{width:100%;max-width:380px;text-align:center}
+.gate img{width:84px;height:84px;border-radius:20px;margin-bottom:10px}
+.gate h2{margin:0 0 4px;font-size:24px}
+.gate .card{text-align:left;margin-top:16px}
+.gate .err{color:var(--danger);font-size:13px;min-height:18px;margin:-4px 2px 8px;text-align:center}
+.gate .link{background:none;border:0;color:var(--title);font:inherit;font-size:14px;font-weight:700;margin-top:14px;padding:8px;cursor:pointer}
+.ed{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);font-size:15px}
+.ed .nm{flex:1}.ed button{border:0;background:var(--chip);color:var(--muted);border-radius:9px;min-width:36px;height:32px;font:inherit;font-size:12px;font-weight:700;cursor:pointer}
+.ed button.on{background:var(--p-go);color:var(--p-go-ink)}
+.addrow{display:flex;gap:6px;margin:8px 0 4px}.addrow input,.addrow select{border:1px solid var(--line);background:var(--solid);color:var(--ink);border-radius:10px;padding:8px;font:inherit;font-size:16px;min-width:0}
+.addrow input{flex:1}
+.empty-ph{display:grid;place-items:center;height:100%;color:var(--muted);font-size:13px}
+</style>
+</head>
+<body>
+<div class="ak-boot"><div><img src="icon-180-v1.png" alt=""><p>불러오는 중…</p></div></div>
+
+<header class="ak-top">
+  <h1>산도장</h1>
+  <span class="ak-status"><i class="ak-dot" id="dot"></i><span id="st">불러오는 중…</span></span>
+  <button class="ak-icon-btn bell" id="bell" type="button" aria-label="알림"><svg class="ak-ic" viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15z"/><path d="M10 20a2 2 0 0 0 4 0"/></svg></button>
+  <button class="ak-icon-btn" id="refresh" type="button" aria-label="새로고침"><svg class="ak-ic" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg></button>
+</header>
+<main id="sc"></main>
+<nav class="ak-tabs" aria-label="메뉴">
+  <button type="button" data-tab="home"><svg class="ak-ic" viewBox="0 0 24 24"><path d="M3 20l6-10 4 6 3-4 5 8z"/><circle cx="17" cy="6" r="2"/></svg>홈</button>
+  <button type="button" data-tab="mt"><svg class="ak-ic" viewBox="0 0 24 24"><path d="M12 21s-6-5.6-6-11a6 6 0 1 1 12 0c0 5.4-6 11-6 11z"/><circle cx="12" cy="10" r="2.2"/></svg>산</button>
+  <button type="button" data-tab="trip"><svg class="ak-ic" viewBox="0 0 24 24"><rect x="5" y="7" width="14" height="14" rx="3"/><path d="M9 7V5a3 3 0 0 1 6 0v2M5 13h14M10 13v3h4v-3"/></svg>산행</button>
+  <button type="button" data-tab="photo"><svg class="ak-ic" viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>사진</button>
+  <button type="button" data-tab="set"><svg class="ak-ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>설정</button>
+</nav>
+
+<div class="gate" id="gate" hidden></div>
+<div class="ak-sheet" id="sheet"><div class="ak-grab"></div><div class="body" id="sb"></div></div>
+<input type="file" accept="image/*" capture="environment" id="pickCam" class="hidden-file">
+<input type="file" accept="image/*" id="pickAlb" class="hidden-file">
+
+<script>
+/* ═══ app-kit.js — 모바일 웹앱 공통 동작 ═══
+   AppKit.fixViewport({gap})       화면 높이 보정 (아이폰 홈 화면 앱 위아래 공백 제거). 탭바가 화면 아래로 잘리면 {gap:false}
+   AppKit.bootDone()               첫 로딩 화면 걷기
+   AppKit.track(promise, opts)     진행 막대 + 알약 + 누른 버튼 스피너
+   AppKit.wrap(fn, skip)           API 함수를 감싸 "방금 누른 동작"만 자동으로 진행 표시
+   AppKit.spin(el, promise)        새로고침 아이콘 돌리기 (아이콘만 가운데 축으로, 멈출 땐 한 바퀴 마저 돌고 0도에서)
+   AppKit.keyboardSafe()           입력칸을 누르면 키보드에 가리지 않게 여백 + 가운데로
+   AppKit.toast(msg)               짧은 알림
+   AppKit.swipe(el, {onNext,onPrev})  좌우 스와이프 (탭·날짜 넘기기)
+   AppKit.tabs({...})              탭바 + 스와이프 + 넘김 애니메이션
+   AppKit.sheet(el)                바텀시트 열기/닫기 + 끌어내려 닫기
+   AppKit.autoUpdate(build)        version.txt 가 바뀌면 새 버전으로 다시 열기
+   AppKit.env()                    진단 문구 (버전·홈 화면 앱 여부·화면 크기)
+   AppKit.store('앱접두어')         localStorage 를 안전하게 (get/set/del)
+   AppKit.esc / num / krw / signed / kstDate / addDays / hhmm   글자·숫자·날짜
+   AppKit.poll(fn, ms, busy)       화면이 보일 때만 자동 새로고침 + 돌아오면 즉시
+   AppKit.editing(view)            입력 중인지 (배경 새로고침이 입력값을 지우지 않게)
+   AppKit.sequence()               늦게 온 예전 응답 버리기
+   AppKit.showErrors(build)        앱 오류를 화면에 표시
+   AppKit.sure(btn)                두 번 눌러야 지워지는 버튼
+   AppKit.copy(text) / buzz()      복사 · 진동
+   AppKit.toJpeg(file, maxSide)    사진 줄여서 올리기
+   AppKit.device()                 접속 기록용 기기·방식 */
+const AppKit = (() => {
+  const $ = s => typeof s === 'string' ? document.querySelector(s) : s;
+  const root = document.documentElement;
+  const standalone = () => !!navigator.standalone || matchMedia('(display-mode: standalone)').matches;
+
+  /* ── 1. 화면 높이 ──
+     아이폰 홈 화면 앱은 웹 화면(innerHeight)을 실제 화면보다 짧게 잡을 때가 있다.
+     그 차이(gap)만큼 문서 높이를 늘려 맨 아래 빈 띠를 없앤다. 가로 모드·브라우저에서는 보정하지 않는다. */
+  let gap = 0;
+  /* 주의(개찰알림 2026-11, iOS 홈 화면 앱·상태바 default): raw 가 상태바 높이만큼 잡혀 문서가 화면보다 길어지고
+     탭바가 화면 아래로 잘렸다. 그런 기기에서는 fixViewport({ gap:false }) 로 보정을 끈다(남는 띠는 html 배경=탭바 색이라 이어져 보인다). */
+  function fixViewport({ gap: useGap = true } = {}) {
+    const set = () => {
+      const portraitH = Math.max(screen.height, screen.width);
+      const raw = innerHeight < innerWidth ? 0 : portraitH - innerHeight;
+      gap = useGap && standalone() && raw > 0 && raw < 160 ? raw : 0;
+      root.style.setProperty('--app-h', (innerHeight + gap) + 'px');
+      root.classList.toggle('standalone', standalone());
+    };
+    set();
+    addEventListener('resize', set);
+    addEventListener('orientationchange', () => setTimeout(set, 300));
+  }
+
+  /* ── 2. 로딩 ── */
+  function bootDone() { const b = $('.ak-boot'); if (!b) return; b.classList.add('out'); setTimeout(() => b.remove(), 300); }
+
+  let tapAt = 0, tapEl = null, busyN = 0, pillTm = 0, busyLabel = '잠깐만요, 처리 중이에요', busyEmoji = '⏳';
+  ['pointerdown', 'change'].forEach(t => document.addEventListener(t, e => {
+    tapAt = Date.now();
+    if (t === 'pointerdown') tapEl = e.target.closest?.('button,label,.btn,[role=button]') || null;
+  }, true));
+  function busyUI(on, label) {
+    let bar = $('.ak-bar'), pill = $('.ak-pill');
+    if (on) {
+      if (!bar) { bar = document.createElement('div'); bar.className = 'ak-bar'; document.body.appendChild(bar); }
+      if (!pill) { pill = document.createElement('div'); pill.className = 'ak-pill'; pill.setAttribute('role', 'status'); document.body.appendChild(pill); }
+      pill.innerHTML = `<span class="e">${busyEmoji}</span><span></span><span class="d"><i></i><i></i><i></i></span>`;
+      pill.children[1].textContent = label || busyLabel;
+      pill.classList.toggle('top', !!$('.ak-sheet.on'));           // 시트가 열려 있으면 버튼을 가리지 않게 위로
+      requestAnimationFrame(() => bar.classList.add('on'));
+      clearTimeout(pillTm); pillTm = setTimeout(() => pill.classList.add('on'), 350);   // 금방 끝나면 알약은 안 띄움
+    } else {
+      clearTimeout(pillTm); bar?.classList.remove('on'); pill?.classList.remove('on');
+      document.querySelectorAll('.is-busy').forEach(x => x.classList.remove('is-busy'));
+    }
+  }
+  function track(p, { el, label } = {}) {
+    busyN++; const b = $(el) || tapEl; if (b && document.contains(b)) b.classList.add('is-busy'); busyUI(true, label);
+    const done = () => { if (--busyN <= 0) { busyN = 0; busyUI(false); } };
+    p.then(done, done); return p;
+  }
+  /* 사용자가 누른 지 1.5초 안에 시작된 요청만 표시한다. 배경 새로고침은 조용히. */
+  function wrap(fn, skip) {
+    return function (...a) {
+      const p = fn.apply(this, a);
+      if (Date.now() - tapAt > 1500 || (skip && skip(...a))) return p;
+      return track(p);
+    };
+  }
+  /* 버튼째 돌리면 축이 어긋나 꿀렁거리고, 응답이 오는 순간 멈추면 0도로 툭 튄다(개찰알림에서 지적).
+     → 안의 svg 만 돌리고, 끝나면 돌던 바퀴를 마저 돈 뒤(animationiteration) 멈춘다. 여러 요청이 겹쳐도 마지막이 끝날 때까지 돈다 */
+  function spin(el, p) {
+    el = $(el); if (!el) return p;
+    const ic = el.querySelector('svg') || el;
+    ic.dataset.spinN = (+ic.dataset.spinN || 0) + 1;
+    ic.classList.add('ak-spin');
+    const off = () => {
+      if (--ic.dataset.spinN > 0) return;
+      const stop = () => { if (+ic.dataset.spinN <= 0) ic.classList.remove('ak-spin'); };
+      ic.addEventListener('animationiteration', stop, { once: true });
+      setTimeout(stop, 2600);
+    };
+    p.then(off, off); return p;
+  }
+  /* 입력칸이 화면 아래쪽이면 키보드에 가려 누를 수 없었다(개찰알림 설정 탭) → 누르는 동안 아래 여백을 늘리고 그 칸을 가운데로 */
+  function keyboardSafe(view = '#sc') {
+    const sel = view + ' input,' + view + ' select,' + view + ' textarea';
+    document.addEventListener('focusin', e => {
+      if (!e.target.matches?.(sel)) return;
+      document.body.classList.add('kb');
+      setTimeout(() => e.target.scrollIntoView({ block: 'center', behavior: 'smooth' }), 350);
+    });
+    document.addEventListener('focusout', () => setTimeout(() => { if (!document.activeElement?.matches?.(sel)) document.body.classList.remove('kb'); }, 200));
+  }
+  function setBusy({ label, emoji } = {}) { if (label) busyLabel = label; if (emoji) busyEmoji = emoji; }
+
+  let toastTm = 0;
+  function toast(msg, ms = 2400) {
+    let t = $('.ak-toast');
+    if (!t) { t = document.createElement('div'); t.className = 'ak-toast'; t.setAttribute('role', 'status'); t.setAttribute('aria-live', 'polite'); document.body.appendChild(t); }
+    t.textContent = msg; requestAnimationFrame(() => t.classList.add('on'));
+    clearTimeout(toastTm); toastTm = setTimeout(() => t.classList.remove('on'), ms);
+  }
+
+  /* ── 3. 스와이프 ──
+     · 세로 스크롤과 헷갈리지 않게: 가로 이동이 세로의 1.5배 이상, 60px 이상, 0.7초 이내일 때만.
+     · 가로로 스크롤되는 영역·입력칸·지도·[data-noswipe] 안에서 시작하면 무시.
+     · 화면 왼쪽 끝 24px 에서 시작하면 무시 (사파리 뒤로 가기 동작과 겹침). */
+  function hScrollable(n, stop) {
+    for (; n && n !== stop && n.nodeType === 1; n = n.parentElement) {
+      if (n.matches('[data-noswipe],input,textarea,select,.ak-hscroll,.leaflet-container,canvas')) return true;
+      if (n.scrollWidth > n.clientWidth + 4 && /(auto|scroll)/.test(getComputedStyle(n).overflowX)) return true;
+    }
+    return false;
+  }
+  function swipe(el, { onNext, onPrev, min = 60 } = {}) {
+    el = $(el); let x0 = null, y0 = 0, t0 = 0;
+    el.addEventListener('touchstart', e => {
+      x0 = null; if (e.touches.length !== 1) return;
+      const t = e.touches[0]; if (t.clientX < 24 || hScrollable(e.target, el)) return;
+      x0 = t.clientX; y0 = t.clientY; t0 = Date.now();
+    }, { passive: true });
+    el.addEventListener('touchend', e => {
+      if (x0 == null) return; const t = e.changedTouches[0], dx = t.clientX - x0, dy = t.clientY - y0; x0 = null;
+      if (Math.abs(dx) < min || Math.abs(dx) < Math.abs(dy) * 1.5 || Date.now() - t0 > 700) return;
+      (dx < 0 ? onNext : onPrev)?.();
+    }, { passive: true });
+    el.addEventListener('touchcancel', () => { x0 = null; }, { passive: true });
+  }
+  /* 탭바(.ak-tabs button[data-tab]) + 내용(render) + 스와이프를 한 번에 연결 */
+  function tabs({ bar = '.ak-tabs', view = '#sc', ids, start, render, remember = 'ak-tab' }) {
+    bar = $(bar); view = $(view);
+    let cur = start || ids[0];
+    try { const s = localStorage.getItem(remember); if (remember && ids.includes(s)) cur = s; } catch (e) {}
+    function go(id, dir) {
+      if (!ids.includes(id)) return;
+      if (dir == null) dir = Math.sign(ids.indexOf(id) - ids.indexOf(cur));
+      cur = id; try { remember && localStorage.setItem(remember, id); } catch (e) {}
+      bar?.querySelectorAll('[data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === id));
+      render(id); view.scrollTop = 0;
+      view.classList.remove('ak-in-l', 'ak-in-r');
+      if (dir) { void view.offsetWidth; view.classList.add(dir > 0 ? 'ak-in-l' : 'ak-in-r'); }
+    }
+    bar?.addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if (b) go(b.dataset.tab); });
+    swipe(view, {
+      onNext: () => { const i = ids.indexOf(cur); if (i < ids.length - 1) go(ids[i + 1], 1); },
+      onPrev: () => { const i = ids.indexOf(cur); if (i > 0) go(ids[i - 1], -1); },
+    });
+    go(cur, 0);
+    /* 배경 새로고침용 다시 그리기: go() 는 scrollTop 을 0 으로 만든다 → 1분마다 목록이 맨 위로 튕겼다. redraw() 는 보던 위치를 지킨다 */
+    function redraw() { const top = view.scrollTop; render(cur); view.scrollTop = top; }
+    return { go, redraw, get current() { return cur; } };
+  }
+
+  /* ── 4. 바텀시트 ── 손잡이(.ak-grab)를 끌어내리거나 바깥을 누르면 닫힌다 */
+  function sheet(el) {
+    el = $(el);
+    let scrim = el.previousElementSibling?.classList.contains('ak-scrim') ? el.previousElementSibling : null;
+    if (!scrim) { scrim = document.createElement('div'); scrim.className = 'ak-scrim'; el.before(scrim); }
+    const open = () => { el.style.transform = ''; el.classList.add('on'); scrim.classList.add('on'); };
+    const close = () => { el.style.transform = ''; el.classList.remove('on'); scrim.classList.remove('on'); };
+    scrim.addEventListener('click', close);
+    const g = el.querySelector('.ak-grab');
+    if (g) {
+      let y0 = null, moved = 0, t0 = 0;
+      g.addEventListener('pointerdown', e => { y0 = e.clientY; t0 = Date.now(); moved = 0; el.classList.add('dragging'); g.setPointerCapture(e.pointerId); });
+      g.addEventListener('pointermove', e => { if (y0 == null) return; moved = Math.max(0, e.clientY - y0); el.style.transform = `translateY(${moved}px)`; });
+      const up = () => {
+        if (y0 == null) return; y0 = null; el.classList.remove('dragging');
+        const v = moved / Math.max(1, Date.now() - t0);
+        if (moved > el.offsetHeight * .3 || v > .5) close(); else el.style.transform = '';
+      };
+      g.addEventListener('pointerup', up); g.addEventListener('pointercancel', up);
+    }
+    return { open, close, get isOpen() { return el.classList.contains('on'); } };
+  }
+
+  /* ── 5. 새 버전 자동 열기 ──
+     휴대폰이 예전 화면을 붙잡고 있을 때: version.txt 숫자가 이 페이지의 build 와 다르면 ?v=숫자 로 다시 연다.
+     같은 버전으로 두 번 되돌지 않게 sessionStorage 에 기록한다. */
+  function autoUpdate(build, url = 'version.txt') {
+    const chk = () => fetch(url + '?t=' + Date.now(), { cache: 'no-store' }).then(r => r.text()).then(v => {
+      v = (v || '').trim(); if (!/^[0-9]+$/.test(v) || v === String(build)) return;
+      try { if (sessionStorage.getItem('ak-up') === v) return; sessionStorage.setItem('ak-up', v); } catch (e) {}
+      location.replace(location.pathname + '?v=' + v + location.hash);
+    }).catch(() => {});
+    chk(); document.addEventListener('visibilitychange', () => { if (!document.hidden) chk(); });
+  }
+
+  /* ── 6. 진단 ── 화면 문제를 볼 때 설정 화면 맨 아래에 작게 보여 준다 */
+  function env(build) {
+    const p = document.createElement('div');
+    p.style.cssText = 'position:fixed;top:env(safe-area-inset-top);height:env(safe-area-inset-bottom);visibility:hidden';
+    document.body.appendChild(p); const cs = getComputedStyle(p), st = cs.top, sb = cs.height; p.remove();
+    return `버전 ${build ?? '-'} · ${standalone() ? '홈 화면 앱' : '브라우저'} · 화면 ${screen.width}×${screen.height} · 웹뷰 ${innerWidth}×${innerHeight} · 안전영역 위 ${st} 아래 ${sb} · 보정 ${gap}px`;
+  }
+
+  /* ── 7. 저장·글자·숫자 ── */
+  /* 저장소: 앱마다 접두어를 붙이고(같은 github.io 주소를 여러 앱이 함께 쓴다), 막혀 있어도 앱이 죽지 않게 try 로 감싼다 */
+  function store(prefix) {
+    const k = n => prefix + '.' + n;
+    return {
+      get(n, d) { try { const v = localStorage.getItem(k(n)); return v == null ? d : JSON.parse(v); } catch (e) { return d; } },
+      set(n, v) { try { localStorage.setItem(k(n), JSON.stringify(v)); } catch (e) {} },
+      del(n) { try { localStorage.removeItem(k(n)); } catch (e) {} },
+    };
+  }
+  /* 서버·사용자 글자를 innerHTML 에 넣을 때는 반드시 esc() */
+  const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const pad = n => String(n).padStart(2, '0');
+  const num = n => Math.round(n).toLocaleString('ko-KR');
+  const krw = n => (n < 0 ? '−' : '') + num(Math.abs(n)) + '원';
+  const signed = n => (n > 0 ? '+' : n < 0 ? '−' : '') + num(Math.abs(n));
+  /* 날짜는 휴대폰 시간대와 상관없이 한국 시간 기준 YYYY-MM-DD */
+  const kstDate = (d = new Date()) => new Date(d.getTime() + 9 * 3600e3).toISOString().slice(0, 10);
+  const addDays = (s, n) => { const d = new Date(s + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+  const hhmm = (d = new Date()) => pad(d.getHours()) + ':' + pad(d.getMinutes());
+
+  /* ── 8. 자동 새로고침 ──
+     화면이 보일 때만 ms 마다 fn 을 부르고, 다른 앱에 갔다 돌아오면 바로 한 번 부른다.
+     ms 를 함수로 주면 매번 간격을 다시 정한다(예: 장중 15초, 마감 뒤 2분). busy() 가 참이면 건너뛴다. */
+  function poll(fn, ms, busy) {
+    let tm = 0;
+    const next = () => { clearTimeout(tm); if (!document.hidden) tm = setTimeout(tick, typeof ms === 'function' ? ms() : ms); };
+    const tick = async () => { if (!document.hidden && !(busy && busy())) { try { await fn(); } catch (e) {} } next(); };
+    document.addEventListener('visibilitychange', () => { if (document.hidden) clearTimeout(tm); else tick(); });
+    next();
+    return { now: tick, stop: () => clearTimeout(tm) };
+  }
+  /* 사용자가 입력 중이거나 저장 안 한 값이 있으면 참 → 배경 새로고침이 화면을 다시 그려 입력값을 지우지 않게 */
+  function editing(view = '#sc') {
+    const v = $(view); if (!v) return false; const a = document.activeElement;
+    if (a && v.contains(a) && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)) return true;
+    return [...v.querySelectorAll('input,textarea')].some(i =>
+      i.type === 'checkbox' || i.type === 'radio' ? i.checked !== i.defaultChecked : i.type !== 'file' && i.value !== i.defaultValue);
+  }
+  /* 늦게 온 예전 응답 버리기:  const mine = seq.next();  …await…  if (!seq.is(mine)) return; */
+  function sequence() { let n = 0; return { next: () => ++n, is: v => v === n }; }
+
+  /* ── 9. 오류·확인 ── */
+  /* 앱 오류를 화면에 보여 준다(사용자가 캡처해서 알려 줄 수 있게). 다른 주소 스크립트의 'Script error.'(줄 번호 없음)는 무시 */
+  function showErrors(build) {
+    addEventListener('error', e => {
+      if (!e.lineno) return;
+      let b = $('.ak-err'); if (!b) { b = document.createElement('div'); b.className = 'ak-err'; document.body.prepend(b); }
+      b.textContent = `앱 오류: ${e.message || '알 수 없음'} (줄 ${e.lineno}${build ? ' · 버전 ' + build : ''})`;
+    });
+  }
+  /* 지우기처럼 되돌릴 수 없는 버튼: 처음 누르면 글자가 "정말 삭제"로 바뀌고, 한 번 더 눌러야 참 */
+  function sure(btn, label = '정말 삭제') {
+    if (btn.dataset.sure) return true;
+    // innerHTML 로 되돌린다: textContent 로 되돌리면 버튼 안 아이콘(svg)이 사라졌다. 문구는 동작에 맞게('해제할까요?', '뺄까요?')
+    const old = btn.innerHTML; btn.dataset.sure = '1'; btn.textContent = label;
+    setTimeout(() => { if (document.contains(btn)) { delete btn.dataset.sure; btn.innerHTML = old; } }, 3000);
+    return false;
+  }
+  async function copy(text) {
+    try { await navigator.clipboard.writeText(text); toast('복사했어요'); }
+    catch (e) { toast(text, 5000); }
+  }
+  const buzz = (ms = 12) => { try { navigator.vibrate?.(ms); } catch (e) {} };
+
+  /* ── 10. 사진 줄이기 ── 올리기 전에 긴 변 maxSide 로 줄인 JPEG(data URL). Apps Script·시트에 큰 사진을 그대로 보내지 않는다 */
+  async function toJpeg(file, maxSide = 1100, quality = .82) {
+    let img; try { img = await createImageBitmap(file); } catch (e) {
+      img = await new Promise((res, rej) => { const im = new Image(); im.onload = () => res(im); im.onerror = rej; im.src = URL.createObjectURL(file); });
+    }
+    const w = img.width || img.naturalWidth, h = img.height || img.naturalHeight, s = Math.min(1, maxSide / Math.max(w, h));
+    const c = document.createElement('canvas'); c.width = Math.round(w * s); c.height = Math.round(h * s);
+    c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', quality);
+  }
+
+  /* ── 11. 접속 정보 ── 서버 접속 기록용: 어떤 기기에서 어떤 방식으로 열었는지 */
+  function device() {
+    const u = navigator.userAgent || ''; let dev = '기타';
+    if (/iPhone/.test(u)) dev = 'iPhone'; else if (/iPad/.test(u) || (/Macintosh/.test(u) && navigator.maxTouchPoints > 1)) dev = 'iPad';
+    else if (/Android/.test(u)) dev = 'Android'; else if (/Macintosh/.test(u)) dev = 'Mac'; else if (/Windows/.test(u)) dev = 'Windows';
+    const v = (u.match(/OS (\d+)[_.]/) || [])[1]; if (v && /iP/.test(dev)) dev += ' iOS ' + v;
+    let via = '브라우저';
+    try { if (new URLSearchParams(location.search).get('via') === 'widget') via = '위젯'; else if (standalone()) via = '홈화면 앱'; } catch (e) {}
+    return { dev, via };
+  }
+
+  return { fixViewport, bootDone, track, wrap, spin, keyboardSafe, setBusy, toast, swipe, tabs, sheet, autoUpdate, env, standalone,
+    store, esc, pad, num, krw, signed, kstDate, addDays, hhmm, poll, editing, sequence, showErrors, sure, copy, buzz, toJpeg, device };
+})();
+</script>
+<script>
+const BUILD = '1795274041';
+AppKit.fixViewport({ gap: false });
+/* 초대 링크(?join)는 새 버전 자동 열기(?v=)가 주소를 바꿔도 잊지 않게 먼저 기억해 둔다 */
+try { if (new URLSearchParams(location.search).has('join')) localStorage.setItem('sandojang-join', '1'); } catch (e) {}
+AppKit.autoUpdate(BUILD);
+AppKit.showErrors(BUILD);
+AppKit.keyboardSafe();
+const LS = AppKit.store('sandojang');
+const { esc } = AppKit;
+const API_URL = '';                   // 서버 주소(…/exec). 서버가 만들어지면 여기에 넣어 초대받은 사람이 주소를 넣지 않아도 되게 한다
+const KAKAO_KEY = '';                 // 카카오 지도 JavaScript 키 (공개돼도 되는 키, 도메인으로 묶임)
+const KR = 'M313 7L315 12L319 19L320 23L321 27L329 41L334 55L335 57L338 61L339 64L353 82L358 90L364 96L369 102L369 104L369 107L370 109L373 110L374 112L376 119L377 121L378 122L383 130L385 133L386 134L387 138L391 142L392 145L393 153L395 157L399 163L399 165L397 167L398 171L399 180L399 184L402 193L402 197L401 201L400 204L398 208L399 212L400 217L400 221L400 229L399 231L397 234L396 236L395 238L395 250L395 251L397 253L397 257L398 259L399 262L397 263L395 264L397 267L398 269L399 270L403 269L408 263L409 262L411 264L411 266L412 268L410 270L407 276L407 279L406 286L404 292L404 295L402 302L401 305L400 306L401 308L402 310L401 312L401 315L401 319L400 320L399 322L397 321L397 319L395 317L394 319L395 320L396 322L395 324L393 325L393 327L394 329L392 332L393 333L392 335L390 336L388 338L386 338L385 342L384 343L385 345L384 347L383 350L381 352L380 353L378 354L376 354L375 355L374 357L374 359L372 361L371 360L369 358L367 360L366 362L366 364L364 362L364 365L363 365L361 366L360 363L360 361L361 358L361 356L358 362L356 360L356 358L355 359L355 362L353 362L347 362L347 360L346 362L343 361L342 360L340 360L340 356L338 357L336 356L333 356L333 352L332 349L330 351L331 354L332 357L332 359L334 361L334 363L335 364L333 364L332 363L331 362L326 360L322 360L322 362L318 364L315 365L314 368L313 369L321 365L323 367L323 369L322 371L320 371L318 371L318 373L319 374L319 377L318 381L320 381L321 383L318 386L316 386L314 386L316 385L312 383L309 381L310 380L312 379L310 375L309 377L308 379L306 379L304 377L301 376L300 378L300 381L298 381L294 381L293 380L293 378L290 377L288 377L287 375L288 366L288 365L289 363L286 365L285 366L283 367L285 370L281 371L279 372L279 370L277 368L277 371L276 374L274 375L272 376L270 375L268 375L263 374L262 373L261 372L260 373L260 375L259 377L256 379L254 380L253 379L251 376L249 377L249 379L249 380L250 382L251 384L252 386L254 388L256 388L259 386L261 386L263 386L265 385L265 387L264 391L263 396L259 398L257 397L255 397L254 400L254 403L254 407L252 406L250 406L249 405L248 404L247 402L248 399L249 397L249 395L249 394L247 390L246 389L245 385L245 383L244 381L242 385L238 387L233 387L235 389L237 390L233 392L231 393L232 395L233 394L235 395L235 400L238 402L240 404L242 406L240 406L242 408L243 411L241 412L239 413L235 410L233 410L231 411L231 415L233 415L236 414L238 416L234 420L233 422L231 421L229 423L229 424L228 426L224 421L223 419L220 415L216 417L214 418L212 416L213 414L215 413L217 410L218 408L219 406L219 408L218 413L220 412L222 412L224 410L223 407L222 405L222 403L224 399L226 401L226 402L227 404L229 404L231 401L230 398L230 397L228 397L226 398L224 397L222 393L221 395L219 399L218 401L216 401L214 401L212 402L211 404L207 406L206 408L204 408L203 411L202 413L201 415L197 420L197 425L194 424L194 426L194 428L191 426L188 425L186 423L187 418L186 416L187 413L185 411L183 412L182 414L183 417L181 418L183 422L180 424L179 425L180 426L179 426L177 427L177 429L173 430L172 431L170 438L170 440L168 440L164 441L164 439L164 437L163 435L160 435L161 434L161 432L163 430L163 428L161 427L160 425L161 423L159 420L161 419L163 419L165 419L164 417L163 417L165 415L164 413L163 414L161 414L159 416L157 416L155 416L153 417L153 415L150 413L149 412L148 413L145 411L146 409L148 409L145 407L143 406L143 403L144 400L145 397L145 396L146 395L148 396L150 400L149 402L150 404L151 409L156 410L158 412L159 410L157 409L156 408L155 405L153 406L152 404L152 402L152 401L152 399L154 399L158 399L158 401L159 403L160 405L162 405L164 407L163 405L166 406L168 407L170 408L169 406L166 404L165 402L162 398L161 397L159 397L157 397L155 396L153 397L151 396L152 394L155 394L159 392L162 395L164 395L164 392L167 390L171 391L173 391L174 389L172 387L168 388L168 386L168 384L169 382L168 380L166 380L165 383L166 384L165 387L164 391L161 392L162 390L160 389L158 390L156 389L154 391L152 391L151 390L154 387L155 386L155 383L156 381L154 378L153 376L155 374L156 373L155 371L153 372L151 373L152 375L151 377L148 377L147 375L146 374L148 372L150 373L149 371L152 368L151 366L149 363L147 362L146 363L145 365L143 363L142 359L142 358L143 356L146 357L147 358L148 357L149 354L150 356L150 358L149 360L150 362L152 363L154 363L154 366L156 368L158 363L158 360L156 359L154 356L151 353L151 351L152 349L151 347L149 347L146 347L149 345L150 345L151 343L152 342L152 339L152 337L153 336L155 333L156 335L159 335L156 332L156 328L157 325L159 320L161 318L164 317L167 316L169 316L172 313L173 313L175 314L176 316L176 313L175 311L163 312L159 310L159 307L161 305L163 304L164 302L167 300L170 299L172 295L172 293L174 291L178 290L181 291L182 292L185 294L185 292L184 290L182 289L180 287L179 286L179 284L180 284L185 284L187 283L187 282L189 281L188 279L181 281L179 282L175 281L171 281L171 279L171 277L167 275L164 276L164 273L171 272L175 272L179 271L182 271L183 270L186 268L190 266L192 265L187 265L185 266L184 267L182 268L181 269L179 269L178 270L176 269L175 268L175 266L173 264L173 261L172 260L169 257L168 256L166 257L164 255L162 257L162 254L164 253L167 252L170 253L169 251L167 249L165 249L166 243L167 241L168 240L164 238L164 237L168 236L168 233L164 233L162 231L162 228L163 227L166 224L170 223L171 223L166 223L164 226L162 225L161 223L160 221L162 218L163 217L161 217L160 216L159 214L159 212L161 210L163 208L163 207L161 205L162 203L162 202L160 201L159 199L162 198L160 196L158 197L157 198L157 200L157 202L157 204L157 206L157 208L154 208L152 208L151 207L151 202L152 200L151 197L149 196L148 199L146 200L147 202L148 204L148 206L148 207L149 209L147 210L145 212L145 210L146 207L143 203L144 201L143 198L142 199L140 202L138 202L136 203L135 202L134 201L138 199L138 197L138 196L135 195L134 198L132 200L132 196L132 194L134 191L135 188L135 190L136 192L138 192L137 189L139 190L141 188L139 188L137 186L138 184L137 183L138 180L140 180L140 182L141 183L143 183L144 182L144 179L144 176L144 174L146 173L146 177L147 179L148 182L146 183L146 185L146 187L144 189L145 191L147 190L150 191L148 187L148 185L150 186L152 185L154 184L152 183L154 182L155 180L155 178L155 176L152 176L150 174L152 172L150 171L151 170L152 171L153 169L156 169L158 171L157 173L157 175L159 174L160 176L159 178L159 183L160 185L161 183L163 178L163 176L166 177L167 180L168 180L167 177L162 171L162 169L164 172L166 173L168 172L166 171L164 170L163 168L162 166L163 165L166 166L167 167L169 168L171 170L173 172L172 174L173 176L172 179L174 178L173 174L174 172L175 171L178 170L181 171L183 172L186 174L186 177L185 181L187 178L189 179L189 183L189 185L189 188L190 191L189 193L189 194L191 192L191 191L191 187L193 187L192 185L191 183L193 182L198 181L200 179L202 177L203 175L202 173L204 172L206 171L201 172L200 176L198 177L195 177L192 175L189 172L188 170L193 169L192 168L194 168L195 169L195 167L194 165L193 163L194 160L192 161L191 163L191 164L191 166L189 166L186 166L182 165L182 163L182 160L183 158L184 157L186 156L189 156L191 155L192 152L190 153L189 154L187 154L186 152L184 152L183 154L180 157L178 158L177 156L179 154L176 154L175 152L177 151L179 150L180 149L177 149L176 147L175 145L176 144L179 144L181 145L183 145L183 147L185 148L186 147L186 145L188 143L190 143L192 143L191 142L188 141L187 140L185 141L181 139L177 137L178 133L179 132L175 131L173 134L171 132L172 130L173 129L171 127L170 124L170 121L173 121L171 120L170 117L170 115L169 113L168 110L167 108L166 106L166 103L164 94L166 93L170 95L173 94L175 94L175 97L175 99L175 103L177 105L180 106L182 106L181 105L176 101L178 98L178 96L177 93L177 91L177 89L178 87L177 86L175 79L175 76L178 75L180 75L183 72L190 62L191 60L194 58L196 56L197 53L198 50L200 48L204 44L210 41L215 39L220 39L223 39L233 38L240 40L243 40L248 39L263 37L265 39L267 41L272 40L281 40L286 40L292 38L297 34L301 30L303 27L305 25L306 22L306 18L306 15L305 13L308 10L313 7ZM154 224L155 226L156 228L152 229L150 227L152 225L150 227L149 225L151 223L149 223L148 220L148 217L148 215L147 212L149 210L152 211L151 213L152 216L152 218L153 219L152 221L154 222L154 224ZM145 90L147 90L149 91L148 93L147 94L145 94L142 93L140 94L139 93L140 90L143 89L145 90ZM198 522L198 524L197 525L197 526L196 528L195 530L192 533L191 535L190 537L189 539L187 539L185 539L181 542L173 544L171 546L167 547L164 546L159 547L156 546L148 546L146 547L145 550L142 550L140 546L138 546L135 543L134 540L136 536L137 533L141 531L143 526L145 526L146 524L150 522L159 520L161 518L168 517L174 515L182 514L185 514L188 514L189 516L194 518L195 519L196 522L198 523ZM216 422L219 421L221 422L222 424L222 425L221 427L219 428L216 428L214 428L212 426L212 424L212 423L216 422ZM152 420L152 423L150 428L148 430L147 428L146 430L138 434L134 435L133 433L134 431L132 430L132 432L130 430L131 426L133 424L135 424L136 421L137 420L139 419L142 418L143 416L141 413L143 412L144 413L146 415L147 416L150 415L152 420ZM265 402L267 403L268 404L268 407L268 410L267 412L265 412L262 409L262 406L264 404L265 401L264 400L265 398L267 399L267 401ZM122 392L122 394L120 393L118 394L117 396L116 398L114 398L113 396L113 394L114 392L116 392L120 391L122 392ZM126 379L127 377L129 379L129 382L127 384L125 384L121 384L122 380L124 379L126 379ZM289 388L289 391L288 393L288 395L288 397L288 399L286 400L284 399L282 400L280 398L279 394L278 393L276 396L276 398L275 399L272 398L272 396L272 394L270 387L269 385L269 383L270 381L272 381L272 378L274 376L277 376L278 379L277 381L275 383L276 386L277 387L279 388L280 389L282 389L284 388L286 388L288 388ZM344 383L343 386L341 386L343 389L343 391L340 390L338 391L337 393L337 395L339 396L338 398L332 399L330 399L333 397L332 396L332 393L330 395L328 393L329 391L331 391L332 388L332 386L330 387L327 388L325 388L324 386L323 385L323 383L324 381L327 380L330 379L332 380L334 381L333 378L333 376L334 375L339 371L338 370L339 368L341 367L342 369L341 373L342 375L343 376L342 379L341 382L343 382L344 383ZM130 365L128 364L126 364L127 361L127 359L129 359L130 357L132 356L134 355L132 357L132 359L133 362L131 363L130 365ZM167 119L168 120L167 122L165 122L162 123L161 125L157 128L155 128L155 126L153 126L151 126L150 124L155 120L158 120L160 120L161 119L162 117L164 117L165 118L167 119ZM518 115L519 116L519 119L519 122L517 124L516 125L514 124L512 123L511 121L510 119L511 118L512 117L515 116L517 116ZM162 110L160 109L155 110L153 109L151 107L154 106L155 105L154 103L151 98L151 96L151 91L152 90L154 88L157 89L158 90L162 92L164 95L163 97L164 100L164 104L165 106L163 110ZM19 72L20 75L17 74L15 75L15 76L15 78L12 78L9 76L10 72L12 73L16 71L19 72ZM136 397L136 399L134 400L133 398L131 398L130 397L129 396L127 394L129 393L131 393L133 394L135 395L135 396ZM289 386L285 386L283 386L281 385L281 383L282 381L283 380L285 378L284 381L284 383L286 381L288 382L288 383L288 385ZM183 439L184 441L182 441L180 441L177 440L178 438L175 438L173 436L173 434L174 431L175 430L177 430L179 431L180 432L180 434L181 436L182 438L183 439ZM183 432L184 429L185 427L186 426L188 426L189 427L190 429L191 430L189 430L186 432L185 434L184 433ZM149 384L150 384L151 386L149 388L149 386L146 385L144 385L141 386L140 385L142 384L143 383L145 382L145 380L147 379L148 379L149 381L147 382L148 384Z';                  // 우리나라 윤곽 (Natural Earth, 단순화) — 외부 지도 없이 정복 지도를 그린다
+const H = new URLSearchParams(location.hash.slice(1));
+const S = {
+  api: LS.get('api', '') || API_URL, demo: false, data: LS.get('data', null), lastOk: null,
+  mtFilter: LS.get('mtFilter', 'all'), photoBy: LS.get('photoBy', 'mt'), tripTab: 'mine',
+};
+S.demo = !S.api || H.has('demo');
+
+/* ── 예시 데이터: 지어낸 사람 + 실제 산 좌표 ── */
+const DEMO = (() => {
+  const people = [
+    { id: 'u1', name: '김산들', color: '#4f93c9', role: 'admin' }, { id: 'u2', name: '이바람', color: '#e0806a' },
+    { id: 'u3', name: '박노을', color: '#9b7fd1' }, { id: 'u4', name: '최솔', color: '#5aa57a' }, { id: 'u5', name: '정하늘', color: '#d6a33c' }];
+  // [id, 이름, 지역, 고도, 위도, 경도, 100대명산, 종류]
+  const M = [['m1','북한산 백운대','서울 강북',836,37.6587,126.9779,1,'산'],['m2','설악산 대청봉','강원 속초',1708,38.1194,128.4653,1,'산'],
+    ['m3','지리산 천왕봉','경남 산청',1915,35.3370,127.7306,1,'산'],['m4','한라산 백록담','제주',1947,33.3617,126.5292,1,'산'],
+    ['m5','덕유산 향적봉','전북 무주',1614,35.8601,127.7465,1,'산'],['m6','소백산 비로봉','충북 단양',1439,36.9573,128.4847,1,'산'],
+    ['m7','오대산 비로봉','강원 평창',1563,37.7945,128.5434,1,'산'],['m8','태백산 장군봉','강원 태백',1567,37.0956,128.9150,1,'산'],
+    ['m9','월악산 영봉','충북 제천',1097,36.8890,128.1050,1,'산'],['m10','속리산 문장대','충북 보은',1054,36.5440,127.8700,1,'산'],
+    ['m11','치악산 비로봉','강원 원주',1288,37.3650,128.0550,1,'산'],['m12','가리왕산','강원 정선',1561,37.4626,128.5636,1,'산'],
+    ['m13','민둥산','강원 정선',1119,37.2410,128.7670,1,'산'],['m14','황매산','경남 합천',1108,35.4930,127.9810,1,'산'],
+    ['m15','계방산','강원 평창',1577,37.7290,128.4650,1,'산'],['m16','무등산 천왕봉','광주',1187,35.1340,126.9890,1,'산'],
+    ['m17','가지산','울산 울주',1241,35.6170,129.0050,1,'산'],['m18','내장산 신선봉','전북 정읍',763,35.4800,126.8900,1,'산'],
+    ['m19','선자령','강원 평창',1157,37.6890,128.7520,0,'야영지'],['m20','굴업도 개머리언덕','인천 옹진',90,37.1940,125.9890,0,'야영지'],
+    ['m21','간월재','울산 울주',900,35.5530,129.0420,0,'야영지'],['m22','매봉산 바람의언덕','강원 태백',1303,37.2190,128.9640,0,'야영지']];
+  const mountains = M.map(r => ({ id: r[0], name: r[1], region: r[2], alt: r[3], lat: r[4], lon: r[5], top100: !!r[6], kind: r[7] }));
+  const V = [['u1','m1','2025-10-12',1,0],['u1','m2','2025-06-08',1,1],['u1','m3','2025-09-20',1,1],['u1','m5','2026-01-17',1,1],['u1','m6','2026-02-14',1,0],
+    ['u1','m19','2026-03-28',1,1],['u1','m20','2026-05-03',0,2],['u1','m13','2026-10-18',1,1],['u1','m8','2026-01-03',1,0],['u1','m7','2026-04-19',1,0],
+    ['u1','m15','2026-02-28',1,1],['u1','m14','2026-05-16',1,1],['u1','m21','2026-09-26',1,1],
+    ['u2','m2','2026-11-15',1,1],['u2','m19','2026-03-28',1,1],['u2','m3','2026-08-22',1,2],['u2','m4','2026-06-06',1,0],['u2','m20','2026-05-03',1,2],['u2','m12','2026-07-11',1,1],
+    ['u2','m9','2026-04-05',0,0],['u2','m17','2026-09-26',1,1],['u2','m21','2026-09-26',1,1],
+    ['u3','m1','2026-11-08',1,0],['u3','m19','2026-03-28',1,1],['u3','m20','2026-05-03',1,2],['u3','m16','2026-10-03',1,0],['u3','m10','2026-06-20',1,1],['u3','m22','2026-08-15',1,1],
+    ['u4','m1','2026-02-01',1,0],['u4','m11','2026-03-01',1,0],['u4','m18','2026-11-01',1,0],['u4','m6','2026-02-14',1,0],
+    ['u5','m4','2026-06-06',1,0],['u5','m19','2026-11-14',1,1]];
+  const visits = V.map((r, i) => ({ id: 'v' + i, user: r[0], mt: r[1], date: r[2], verified: !!r[3], nights: r[4] }));
+  const template = [
+    { cat: '잠자리', items: [['텐트', 1], ['침낭'], ['매트'], ['베개'], ['그라운드시트', 1]] },
+    { cat: '주방', items: [['버너', 1], ['가스', 1], ['코펠', 1], ['수저·컵'], ['라이터']] },
+    { cat: '옷', items: [['경량 패딩'], ['우모복'], ['장갑'], ['비니'], ['여벌 양말']] },
+    { cat: '안전', items: [['헤드랜턴'], ['보조배터리'], ['구급약', 1], ['스틱']] },
+    { cat: '물·먹거리', items: [['식수 2L'], ['행동식'], ['저녁·아침', 1]] },
+    { cat: '기타', items: [['쓰레기봉투'], ['물티슈·휴지'], ['랜턴', 1]] }];
+  const trips = [
+    { id: 't1', title: '선자령 겨울 1박', mt: 'm19', start: '2026-12-05', end: '2026-12-06', members: ['u1', 'u2', 'u3'],
+      gear: { '텐트': 'u2', '그라운드시트': 'u2', '버너': 'u1', '가스': 'u1', '코펠': 'u3', '구급약': '', '저녁·아침': 'u3', '랜턴': '' },
+      check: { u1: ['텐트','침낭','매트','버너','가스','수저·컵','라이터','경량 패딩','우모복','장갑','비니','헤드랜턴','보조배터리','식수 2L'] } },
+    { id: 't2', title: '굴업도 봄 백패킹', mt: 'm20', start: '2027-04-17', end: '2027-04-18', members: ['u1', 'u4', 'u5'], gear: {}, check: {} },
+    { id: 't0', title: '간월재 억새 1박', mt: 'm21', start: '2026-09-26', end: '2026-09-27', members: ['u1', 'u2'], gear: { '텐트': 'u1' }, check: {} }];
+  const photos = [['u2','m2','2026-11-15',3],['u3','m1','2026-11-08',1],['u5','m19','2026-11-14',4],['u1','m13','2026-10-18',2],['u4','m18','2026-11-01',5],
+    ['u1','m21','2026-09-26',0],['u2','m21','2026-09-26',3],['u1','m19','2026-03-28',4],['u3','m22','2026-08-15',2]]
+    .map((r, i) => ({ id: 'p' + i, user: r[0], mt: r[1], date: r[2], scene: r[3] }));
+  return { me: 'u1', people, mountains, visits, template, trips, photos, admin: { pending: [{ id: 'u9', name: '한여름', at: '2026-11-20 21:14' }] }, radius: 300 };
+})();
+
+/* ── 서버 호출 ── */
+let api = async (action, payload = {}) => {
+  if (S.demo) { await new Promise(r => setTimeout(r, 450)); return demoApi(action, payload); }
+  const ctl = new AbortController(), t = setTimeout(() => ctl.abort(), 60000);
+  try {
+    const r = await fetch(S.api, { method: 'POST', signal: ctl.signal, headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action, auth: LS.get('auth', null), meta: AppKit.device(), ...payload }) });
+    if (!r.ok) throw new Error('서버가 응답하지 않았어요 (' + r.status + ')');
+    const j = await r.json();
+    if (!j.ok) { if (j.code === 'auth' || j.code === 'pending') gateFor(j.code, j.message); throw Object.assign(new Error(j.message || '처리하지 못했어요'), { code: j.code }); }
+    return j.data;
+  } catch (e) { if (e.name === 'AbortError') throw new Error('서버 응답이 너무 늦어요. 잠시 후 다시 해주세요.'); throw e; }
+  finally { clearTimeout(t); }
+};
+api = AppKit.wrap(api, a => a === 'load' || a === 'img');
+let demoDb = null;
+function demoApi(action, p) {
+  if (!demoDb) demoDb = JSON.parse(JSON.stringify(DEMO));
+  const D = demoDb;
+  if (action === 'checkin') D.visits.push({ id: 'v' + Date.now(), user: D.me, mt: p.mt, date: p.verified ? AppKit.kstDate() : (p.date || AppKit.kstDate()), verified: p.verified, nights: 0 });
+  if (action === 'photo') D.photos.unshift({ id: 'p' + Date.now(), user: D.me, mt: p.mt, date: AppKit.kstDate(), src: p.data });
+  if (action === 'addMt' && p.id) { const m = D.mountains.find(x => x.id === p.id); m.lat = p.mt.lat; m.lon = p.mt.lon; return JSON.parse(JSON.stringify(D)); }
+  if (action === 'delPhoto') D.photos = D.photos.filter(x => x.id !== p.id);
+  if (action === 'check') { const t = D.trips.find(x => x.id === p.trip); const a = t.check[D.me] = t.check[D.me] || []; const i = a.indexOf(p.item); p.on ? i < 0 && a.push(p.item) : i >= 0 && a.splice(i, 1); }
+  if (action === 'gear') { const t = D.trips.find(x => x.id === p.trip); t.gear[p.item] = p.who; }
+  if (action === 'trip') D.trips.unshift({ id: 't' + Date.now(), ...p.trip, gear: {}, check: {} });
+  if (action === 'approve' || action === 'reject') D.admin.pending = D.admin.pending.filter(x => x.id !== p.id);
+  if (action === 'setting') D.radius = p.radius;
+  if (action === 'template') D.template = p.template;
+  if (action === 'delTrip') D.trips = D.trips.filter(x => x.id !== p.trip);
+  if (action === 'joinTrip') { const t = D.trips.find(x => x.id === p.trip); t.members = p.on ? [...new Set([...t.members, D.me])] : t.members.filter(x => x !== D.me); }
+  if (action === 'addMt') D.mountains.push({ id: 'm' + Date.now(), ...p.mt });
+  return JSON.parse(JSON.stringify(D));
+}
+
+if (S.demo) S.data = demoApi('load');   // 예시 모드는 늘 새 예시 데이터로
+
+/* 받은 자료는 휴대폰에 기억 (다음에 열 때 먼저 보여 준다). 예시 모드는 기억하지 않는다 */
+const save = () => { if (!S.demo) LS.set('data', S.data); };
+
+/* ── 작은 도우미 ── */
+/* 실제 서버에서 아직 자료를 못 받았을 때는 빈 자료 (예시 사진을 서버에 달라고 하지 않게) */
+const EMPTY = { me: '', people: [], mountains: [], visits: [], trips: [], photos: [], template: DEMO.template, radius: 300 };
+const D = () => S.data || (S.demo ? DEMO : EMPTY);
+const P = id => D().people.find(p => p.id === id) || { name: '?', color: '#999' };
+const MT = id => D().mountains.find(m => m.id === id) || { name: '?', alt: 0 };
+const av = id => { const p = P(id); return `<i class="av" style="--c:${p.color}" title="${esc(p.name)}">${esc(p.name.length > 2 ? p.name.slice(1, 2) : p.name.slice(-1))}</i>`; };
+const WD = '일월화수목금토';
+const md = s => { const d = new Date(s + 'T00:00:00Z'); return `${d.getUTCMonth() + 1}.${d.getUTCDate()}(${WD[d.getUTCDay()]})`; };   // 날짜 글자만 다루므로 UTC로 (휴대폰 시간대와 무관)
+/* 받침에 따라 이/가, 을/를 */
+const josa = (w, a, b) => { const c = w.charCodeAt(w.length - 1); return w + (c >= 0xAC00 && c <= 0xD7A3 && (c - 0xAC00) % 28 ? a : b); };
+const today = () => AppKit.kstDate();
+const dday = s => Math.round((new Date(s + 'T00:00:00+09:00') - new Date(today() + 'T00:00:00+09:00')) / 864e5);
+const nights = t => Math.max(0, dday(t.end) - dday(t.start));
+const kmOf = (a, b, c, d) => { const R = 6371, r = Math.PI / 180, x = Math.sin((c - a) * r / 2) ** 2 + Math.cos(a * r) * Math.cos(c * r) * Math.sin((d - b) * r / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(x)); };
+const myVisits = (u = D().me) => D().visits.filter(v => v.user === u);
+const doneSet = (u = D().me) => new Set(myVisits(u).map(v => v.mt));
+const allDone = () => new Set(D().visits.map(v => v.mt));
+function stats(u = D().me) {
+  const vs = myVisits(u), set = doneSet(u), yr = today().slice(0, 4), y = vs.filter(v => v.date.startsWith(yr));
+  const hi = [...set].map(MT).sort((a, b) => b.alt - a.alt)[0];
+  return { places: set.size, top100: [...set].filter(id => MT(id).top100).length, year: y.length, nights: y.reduce((s, v) => s + v.nights, 0), hi };
+}
+const upcoming = () => D().trips.filter(t => dday(t.end) >= 0).sort((a, b) => a.start.localeCompare(b.start));
+const IC = {
+  pin: '<svg class="ak-ic" viewBox="0 0 24 24"><path d="M12 21s-6-5.6-6-11a6 6 0 1 1 12 0c0 5.4-6 11-6 11z"/><circle cx="12" cy="10" r="2.2"/></svg>',
+  cam: '<svg class="ak-ic" viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></svg>',
+  img: '<svg class="ak-ic" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-8 8"/></svg>',
+  mt: '<svg class="ak-ic" viewBox="0 0 24 24"><path d="M3 20l6-10 4 6 3-4 5 8z"/></svg>',
+  tent: '<svg class="ak-ic" viewBox="0 0 24 24"><path d="M3 20L12 5l9 15zM12 5v15M9 20l3-5 3 5"/></svg>',
+  plus: '<svg class="ak-ic" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>',
+  ok: '<svg class="ak-ic" viewBox="0 0 24 24" style="width:16px;height:16px;stroke-width:3"><path d="M5 12l5 5 9-10"/></svg>',
+  share: '<svg class="ak-ic" viewBox="0 0 24 24"><path d="M12 15V3M8 7l4-4 4 4M5 12v8h14v-8"/></svg>',
+};
+
+/* ── 정복 지도 (그림): 내가 오른 곳=꽉 찬 점, 친구만=빈 점, 안 가본 곳=작은 점 ── */
+const KX = Math.cos(36 * Math.PI / 180) * 100, px = m => [(m.lon - 124.5) * KX, (38.7 - m.lat) * 100];
+function krMap({ who = 'me', label = false, next = null } = {}) {
+  const mine = doneSet(), all = allDone();
+  const pts = D().mountains.filter(m => m.lat != null).map(m => {
+    const [x, y] = px(m), k = m.id === next ? 'nx' : (who === 'me' ? mine.has(m.id) : all.has(m.id)) ? 'd2' : all.has(m.id) ? 'd1' : 'd0';
+    const r = k === 'd0' ? 5 : 9;
+    return { k, s: `<circle class="${k}" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${r}"/>` + (label && (k === 'd2' || k === 'nx') ? `<text x="${(x + 12).toFixed(0)}" y="${(y + 5).toFixed(0)}">${esc(m.name.split(' ')[0])}</text>` : '') };
+  }).sort((a, b) => 'd0d1d2nx'.indexOf(a.k) - 'd0d1d2nx'.indexOf(b.k)).map(p => p.s).join('');
+  return `<svg class="krmap" viewBox="0 0 526 570" role="img" aria-label="정복 지도"><path class="land" d="${KR}"/>${pts}</svg>`;
+}
+const legend = () => `<div class="legend"><span><i style="background:var(--accent)"></i>내가 오른 곳</span><span><i style="border:2px solid var(--accent);width:7px;height:7px"></i>친구가 오른 곳</span><span><i style="background:#e8833a"></i>다음 산행</span></div>`;
+
+/* ── 인증샷: 예시 사진(그림) + 아래 띠에 날짜·산·고도 찍기 ── */
+const SCENES = [['#f6c89f', '#8fb6d9', '#5d7a99', '#33475c'], ['#bfe3f7', '#e8f4fb', '#7da1bf', '#3e5a73'], ['#ffd29a', '#f49c7a', '#7a5a7c', '#3a2f4a'],
+  ['#9fd0f0', '#d8ecf7', '#6f9a6e', '#2f5233'], ['#1b2a4a', '#38507a', '#24324f', '#121a2c'], ['#ffe6b0', '#cfe6d3', '#7aa886', '#3d6b4b']];
+const photoCache = {};
+function scenePhoto(i) {
+  if (photoCache[i]) return photoCache[i];
+  const c = document.createElement('canvas'); c.width = 600; c.height = 600; const g = c.getContext('2d'), s = SCENES[i % SCENES.length];
+  const gr = g.createLinearGradient(0, 0, 0, 600); gr.addColorStop(0, s[0]); gr.addColorStop(.6, s[1]); g.fillStyle = gr; g.fillRect(0, 0, 600, 600);
+  if (i === 4) { g.fillStyle = '#fff'; for (let k = 0; k < 70; k++) { g.globalAlpha = Math.random() * .8 + .2; g.fillRect((k * 137) % 600, (k * 71) % 330, 2, 2); } g.globalAlpha = 1; }
+  else { g.fillStyle = 'rgba(255,255,255,.85)'; g.beginPath(); g.arc(440, 150, 34, 0, 7); g.fill(); }
+  const ridge = (col, base, amp, seed) => { g.fillStyle = col; g.beginPath(); g.moveTo(0, 600); for (let x = 0; x <= 600; x += 20) g.lineTo(x, base - amp * Math.abs(Math.sin(x / 90 + seed)) - amp * .4 * Math.sin(x / 33 + seed * 2)); g.lineTo(600, 600); g.fill(); };
+  ridge(s[2], 360, 110, i + 1); ridge(s[3], 470, 70, i + 3);
+  g.fillStyle = i % 2 ? '#f2a43a' : '#e86a4f'; g.beginPath(); g.moveTo(250, 520); g.lineTo(300, 455); g.lineTo(350, 520); g.fill();
+  g.fillStyle = 'rgba(0,0,0,.35)'; g.beginPath(); g.moveTo(292, 520); g.lineTo(300, 490); g.lineTo(308, 520); g.fill();
+  return photoCache[i] = c.toDataURL('image/jpeg', .85);
+}
+/* 사진 아래 띠: 날짜 · 산 이름 · 고도 (사진에 직접 찍혀서 어디에 올려도 남는다) */
+async function stamp(src, { date, name, alt }) {
+  const im = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = src; });
+  const w = im.naturalWidth, h = im.naturalHeight, band = Math.round(Math.max(w, h) * .11);
+  const c = document.createElement('canvas'); c.width = w; c.height = h + band; const g = c.getContext('2d');
+  g.drawImage(im, 0, 0); g.fillStyle = '#ffffff'; g.fillRect(0, h, w, band);
+  const f = Math.round(band * .34), pad = Math.round(band * .32);
+  g.fillStyle = '#1f2933'; g.font = `800 ${f}px -apple-system, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif`; g.textBaseline = 'middle';
+  g.fillText(name, pad, h + band * .5);
+  g.textAlign = 'right'; g.fillStyle = '#6b7280'; g.font = `700 ${Math.round(f * .8)}px -apple-system, "Apple SD Gothic Neo", sans-serif`;
+  g.fillText(`${date.replace(/-/g, '.')}  ·  ${AppKit.num(alt)}m`, w - pad, h + band * .5);
+  g.fillStyle = '#4f93c9'; g.fillRect(0, h, Math.round(band * .08), band);
+  return c.toDataURL('image/jpeg', .86);
+}
+const stamped = {};
+async function shrink(src, max) {
+  const im = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = src; });
+  const k = Math.min(1, max / Math.max(im.naturalWidth, im.naturalHeight)), c = document.createElement('canvas');
+  c.width = Math.round(im.naturalWidth * k); c.height = Math.round(im.naturalHeight * k); c.getContext('2d').drawImage(im, 0, 0, c.width, c.height);
+  return c.toDataURL('image/jpeg', .8);
+}
+async function photoSrc(p, size = 't') {
+  if (p.src) return p.src;
+  if (S.demo) { if (stamped[p.id]) return stamped[p.id]; const m = MT(p.mt); return stamped[p.id] = await stamp(scenePhoto(p.scene || 0), { date: p.date, name: m.name, alt: m.alt }); }
+  const key = p.id + size; if (stamped[key]) return stamped[key];
+  let c = null; try { c = await caches.open('sandojang-img'); const r = await c.match('/img/' + key); if (r) return stamped[key] = await r.text(); } catch (e) {}
+  const d = await api('img', { id: p.id, size });
+  try { c && c.put('/img/' + key, new Response(d)).catch(() => {}); } catch (e) {}
+  return stamped[key] = d;
+}/* 사진은 그린 뒤에 채운다 (도장 찍기가 비동기라서) */
+function fillPhotos(root = document) {
+  root.querySelectorAll('img[data-ph]').forEach(async el => { const p = D().photos.find(x => x.id === el.dataset.ph); if (p) try { el.src = await photoSrc(p, el.dataset.size || 't'); } catch (e) { el.alt = '사진을 받지 못했어요'; } });
+}
+const ph = p => `<img data-ph="${p.id}" data-open-photo="${p.id}" alt="${esc(MT(p.mt).name)} 인증샷">`;
+
+/* ── 화면 조각 ── */
+function tripCard(t, compact) {
+  if (!t) return `<div class="card ak-empty">다가오는 산행이 없어요<br><button type="button" data-new-trip>산행 만들기</button></div>`;
+  const m = MT(t.mt), dd = dday(t.start), n = nights(t);
+  const tpl = D().template.flatMap(c => c.items.map(i => i[0])), mine = (t.check[D().me] || []).length;
+  const shared = Object.keys(t.gear), assigned = shared.filter(k => t.gear[k]).length;
+  return `<button class="card trip" type="button" data-trip="${t.id}">
+    <div class="tl"><span class="tag dd">${dd > 0 ? 'D-' + dd : dd === 0 ? '오늘' : '진행 중'}</span><span class="tag">${n ? n + '박 ' + (n + 1) + '일' : '당일'}</span><span class="tag">${esc(m.kind)}</span><span style="margin-left:auto" class="avs">${t.members.map(av).join('')}</span></div>
+    <h4>${esc(t.title)}</h4><div class="meta">${esc(m.name)} · ${md(t.start)}${t.end !== t.start ? ' ~ ' + md(t.end) : ''}</div>
+    ${compact ? '' : `<div class="pg"><span>내 준비물</span><div class="bar"><i style="width:${Math.round(mine / tpl.length * 100)}%"></i></div><b>${mine}/${tpl.length}</b>
+    <span>공동 장비</span><div class="bar"><i style="width:${shared.length ? Math.round(assigned / shared.length * 100) : 0}%"></i></div><b>${assigned}/${shared.length}</b></div>`}</button>`;
+}
+function feedList(n = 5) {
+  const vs = [...D().visits].sort((a, b) => b.date.localeCompare(a.date)).slice(0, n);
+  return `<div class="card feed">${vs.map(v => { const m = MT(v.mt), p = D().photos.find(x => x.mt === v.mt && x.user === v.user);
+    return `<div class="fi" data-mt="${v.mt}">${av(v.user)}<div class="t"><b>${esc(P(v.user).name)}</b> · ${esc(m.name)}<small>${md(v.date)} · ${AppKit.num(m.alt)}m ${v.nights ? '· ' + v.nights + '박' : ''}</small></div>
+    ${v.verified ? '<span class="tag go">인증됨</span>' : '<span class="tag">기록만</span>'}${p ? ph(p) : ''}</div>`; }).join('')}</div>`;
+}
+
+function homeA() {
+  const s = stats(), nx = upcoming()[0];
+  return `<section class="card hero"><div class="hero-t">내가 오른 곳<b>${s.places}곳</b></div>${krMap({ next: nx?.mt })}${legend()}</section>
+  <div class="stats"><div class="stat"><b>${s.top100}<small>/100</small></b><span>100대 명산</span></div>
+    <div class="stat"><b>${s.year}<small>번</small></b><span>올해 산행</span></div><div class="stat"><b>${s.nights}<small>박</small></b><span>올해 야영</span></div></div>
+  <div class="row2" style="margin:12px 0 0"><button class="btn" type="button" data-check>${IC.pin}도착 체크</button><button class="btn ghost" type="button" data-shot>${IC.cam}인증샷</button></div>
+  <h3 class="sec">다음 산행</h3>${tripCard(nx)}
+  <h3 class="sec">최근 인증<small>함께 쓰는 ${D().people.length}명</small></h3>${feedList()}`;
+}
+/* 가까운 산: 예시에서는 서울(마곡) 근처로 가정, 실제로는 마지막으로 받은 내 위치(휴대폰 안에만 보관) */
+function nearest() {
+  const me = LS.get('lastPos', [37.56, 126.83]);
+  return D().mountains.filter(m => m.lat != null).map(m => ({ m, km: kmOf(me[0], me[1], m.lat, m.lon) })).sort((a, b) => a.km - b.km)[0] || { m: { id: '', name: '-' }, km: 0 };
+}
+
+function mtTab() {
+  const mine = doneSet(), all = allDone(), F = S.mtFilter;
+  let ms = D().mountains.filter(m => F === 'all' || (F === 'mine' && mine.has(m.id)) || (F === 'todo' && !mine.has(m.id)) || (F === 'camp' && m.kind === '야영지'));
+  ms.sort((a, b) => (mine.has(b.id) - mine.has(a.id)) || b.alt - a.alt);
+  const cnt = { all: D().mountains.length, mine: mine.size, todo: D().mountains.length - mine.size, camp: D().mountains.filter(m => m.kind === '야영지').length };
+  const chip = (k, t) => (cnt[k] || k === 'all' || k === F) ? `<button class="chip ${F === k ? 'on' : ''}" type="button" data-mtf="${k}">${t} ${cnt[k]}</button>` : '';
+  return `<div class="mapbox" id="mtmap" data-noswipe></div>
+  <div class="chips">${chip('all', '전체')}${chip('mine', '다녀온 곳')}${chip('todo', '안 가본 곳')}${chip('camp', '야영지')}</div>
+  <div class="list">${ms.map(m => { const who = [...new Set(D().visits.filter(v => v.mt === m.id).map(v => v.user))], my = myVisits().find(v => v.mt === m.id);
+    return `<div class="card mt ${mine.has(m.id) ? 'done' : ''}" data-mt="${m.id}"><div class="ico">${m.kind === '야영지' ? IC.tent : IC.mt}</div>
+    <div class="t"><h4>${esc(m.name)}${m.top100 ? '<span class="tag vio">100대 명산</span>' : ''}</h4><p>${esc(m.region)} · ${AppKit.num(m.alt)}m${my ? ' · ' + md(my.date) : ''}</p></div>
+    ${who.length ? `<span class="avs">${who.slice(0, 3).map(av).join('')}</span>` : ''}</div>`; }).join('')}</div>
+  <button class="btn ghost" type="button" data-add-mt style="margin-top:6px">${IC.plus}목록에 없는 산·야영지 추가</button>
+  <p class="note">산 목록은 산림청 100대 명산(한국등산트레킹지원센터 공공데이터)으로 채워요.<br>꽉 찬 표시는 내가 오른 곳이에요.</p>`;
+}
+function drawMtMap() {
+  const el = document.getElementById('mtmap'); if (!el) return;
+  const mine = doneSet(), all = allDone(), ms = D().mountains;
+  if (!(KAKAO_KEY || window.L)) { el.innerHTML = krMap({ label: false }); return; }   // 지도를 못 불러오면 그림 지도
+  const ok = ms.filter(m => m.lat != null);
+  MK.make(el, { pts: ok.filter(m => mine.has(m.id)).map(m => [m.lat, m.lon]) }, h => {
+    ok.forEach(m => h.add(m.lat, m.lon, `<div class="mpin ${mine.has(m.id) ? '' : all.has(m.id) ? 'f' : 'n'}"><i></i>${mine.has(m.id) ? `<b>${esc(m.name.split(' ')[0])}</b>` : ''}</div>`, { onClick: () => openMt(m.id), z: mine.has(m.id) ? 10 : 0 }));
+  });
+}
+
+function tripTab() {
+  const up = upcoming(), past = D().trips.filter(t => dday(t.end) < 0).sort((a, b) => b.start.localeCompare(a.start));
+  return `<button class="btn" type="button" data-new-trip style="margin-bottom:12px">${IC.plus}새 산행 만들기</button>
+  <h3 class="sec" style="margin-top:4px">다가오는 산행<small>${up.length}건</small></h3>${up.map(t => tripCard(t)).join('') || '<div class="ak-empty">다가오는 산행이 없어요</div>'}
+  ${past.length ? `<h3 class="sec">지난 산행</h3>${past.map(t => tripCard(t, true)).join('')}` : ''}
+  <p class="note">산행을 만들면 기본 준비물 목록이 복사돼요.<br>공동 장비는 누가 가져갈지 함께 정해요.</p>`;
+}
+function photoTab() {
+  const by = S.photoBy, ps = [...D().photos].sort((a, b) => b.date.localeCompare(a.date));
+  const groups = {}; ps.forEach(p => { const k = by === 'mt' ? p.mt : by === 'who' ? p.user : p.date.slice(0, 7); (groups[k] = groups[k] || []).push(p); });
+  const head = k => by === 'mt' ? `${esc(MT(k).name)}<small>${groups[k].length}장</small>` : by === 'who' ? `${av(k)}${esc(P(k).name)}<small>${groups[k].length}장</small>` : `${k.replace('-', '년 ')}월<small>${groups[k].length}장</small>`;
+  return `<div class="row2" style="margin-bottom:12px"><button class="btn" type="button" data-shot="cam">${IC.cam}찍기</button><button class="btn ghost" type="button" data-shot="alb">${IC.img}앨범에서</button></div>
+  <div class="seg"><button type="button" class="${by === 'mt' ? 'on' : ''}" data-pby="mt">산별</button><button type="button" class="${by === 'who' ? 'on' : ''}" data-pby="who">사람별</button><button type="button" class="${by === 'month' ? 'on' : ''}" data-pby="month">달별</button></div>
+  ${Object.keys(groups).map(k => `<h3 class="sec">${head(k)}</h3><div class="pgrid">${groups[k].map(ph).join('')}</div>`).join('') || '<div class="ak-empty">아직 인증샷이 없어요</div>'}
+  <p class="note">사진은 줄여서 구글 드라이브에 저장하고, 아래 띠에 날짜·산 이름·고도를 찍어요.</p>`;
+}
+function setTab() {
+  const me = P(D().me), admin = me.role === 'admin', pend = D().admin?.pending || [], R = D().radius || 300;
+  return `${!S.api ? `<div class="card"><h3 style="margin:0 0 4px">먼저 서버를 연결해 주세요</h3><p class="mini" style="margin:0 0 10px">지금은 예시 데이터로 보여 주고 있어요.</p>
+    <label class="field"><span>서버 주소</span><input id="apiUrl" type="url" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="https://script.google.com/macros/s/…/exec"></label>
+    <button class="btn" type="button" data-connect>연결하기</button></div>` : ''}
+  <div class="card"><div class="kv">${av(me.id)}<div><b>${esc(me.name)}</b><div class="mini">${admin ? '관리자' : '함께 쓰는 사람'}</div></div>${S.demo ? '' : '<button class="btn sm ghost" type="button" data-logout>로그아웃</button>'}</div></div>
+  ${admin ? `<h3 class="sec">함께 쓰는 사람<small>${D().people.length}명</small></h3>
+  <div class="card">${pend.map(p => `<div class="kv" style="margin-bottom:10px"><span class="tag warn">승인 대기</span><div><b>${esc(p.name)}</b><div class="mini">${esc(p.at)} 신청</div></div>
+      <span style="display:flex;gap:6px"><button class="btn sm ghost" type="button" data-reject="${esc(p.id)}">거절</button><button class="btn sm" type="button" data-approve="${esc(p.id)}">승인</button></span></div>`).join('')}
+    <div class="avs" style="margin:2px 0 12px">${D().people.map(p => av(p.id)).join('')}</div>
+    <div class="row2"><button class="btn" type="button" data-invite>${IC.share}초대 링크</button><button class="btn ghost" type="button" data-invite="copy">문구 복사</button></div></div>` : ''}
+  <h3 class="sec">기본 준비물<small data-edit-tpl>고치기 ›</small></h3>
+  <div class="card" data-edit-tpl style="cursor:pointer"><p class="mini" style="margin:0 0 8px">새 산행을 만들면 이 목록이 복사돼요. '공동'은 함께 가는 사람끼리 나눠 들어요.</p>
+    ${D().template.map(c => `<div class="cat">${esc(c.cat)}</div><div class="mini">${c.items.map(i => esc(i[0]) + (i[1] ? ' <span class="tag">공동</span>' : '')).join(' · ')}</div>`).join('')}</div>
+  <h3 class="sec">도착 체크 기준</h3>
+  <div class="card"><div class="seg" style="margin:0">${[200, 300, 500].map(r => `<button type="button" class="${R === r ? 'on' : ''}" data-radius="${r}" ${admin ? '' : 'disabled'}>${r}m 안</button>`).join('')}</div>
+    <p class="mini" style="margin:8px 0 0">산 정상·야영지 좌표에서 이 거리 안이면 '인증됨', 밖이면 '기록만'으로 남겨요.${admin ? '' : ' 기준은 관리자가 정해요.'}<br>내 위치 좌표는 서버로 보내지 않아요. 함께 쓰는 사람에게는 산 이름과 인증 여부만 보여요.</p></div>
+  <p class="diag">${AppKit.env(BUILD)}</p>`;
+}
+
+/* ── 시트 ── */
+const sheet = AppKit.sheet('#sheet'), SB = document.getElementById('sb');
+function openSheet(html) { SB.innerHTML = html; SB.scrollTop = 0; fillPhotos(SB); sheet.open(); }
+function openMt(id, res) {
+  S.cur = id; const m = MT(id), vs = D().visits.filter(v => v.mt === id).sort((a, b) => b.date.localeCompare(a.date)), ps = D().photos.filter(p => p.mt === id);
+  openSheet(`<h2 class="sh-h">${esc(m.name)}</h2><div class="sh-sub">${esc(m.region)} · ${AppKit.num(m.alt)}m ${m.top100 ? '· 100대 명산' : '· ' + esc(m.kind)}</div>
+  ${res || ''}
+  <div class="row2"><button class="btn" type="button" data-check="${id}">${IC.pin}도착 체크</button><button class="btn ghost" type="button" data-shot="${id}">${IC.cam}인증샷</button></div>
+  <h3 class="sec">다녀온 사람<small>${vs.length}번</small></h3>
+  ${vs.length ? `<div class="card feed">${vs.map(v => `<div class="fi">${av(v.user)}<div class="t"><b>${esc(P(v.user).name)}</b><small>${md(v.date)}${v.nights ? ' · ' + v.nights + '박' : ''}</small></div>${v.verified ? '<span class="tag go">인증됨</span>' : '<span class="tag">기록만</span>'}</div>`).join('')}</div>` : '<div class="ak-empty">아직 아무도 다녀오지 않았어요</div>'}
+  ${ps.length ? `<h3 class="sec">인증샷<small>${ps.length}장</small></h3><div class="pgrid">${ps.map(ph).join('')}</div>` : ''}
+  <h3 class="sec">다녀온 날 기록<small>지난 산행</small></h3>
+  <div class="addrow"><input type="date" id="pastDate" value="${today()}" max="${today()}"><button class="btn sm" type="button" data-past="${id}">기록만 남기기</button></div>
+  <p class="mini">위치 확인 없이 '기록만'으로 남아요. 인증은 그 자리에서 도착 체크할 때만 돼요.</p>
+  <button class="btn ghost" type="button" data-new-trip="${id}" style="margin-top:14px">${IC.plus}여기로 산행 계획</button>`);
+}
+function openTrip(id) {
+  const t = D().trips.find(x => x.id === id); if (!t) return; S.curTrip = id;
+  const m = MT(t.mt), mine = new Set(t.check[D().me] || []), tab = S.tripTab;
+  const sharedItems = D().template.flatMap(c => c.items.filter(i => i[1]).map(i => i[0])), gearKeys = [...new Set([...sharedItems, ...Object.keys(t.gear)])];
+  const body = tab === 'mine' ? D().template.map(c => `<div class="cat">${esc(c.cat)}</div>${c.items.map(i => {
+      const g = t.gear[i[0]], other = i[1] && g && g !== D().me;
+      return `<div class="ck ${mine.has(i[0]) ? 'on' : ''}" data-ck="${esc(i[0])}"><span class="box">${mine.has(i[0]) ? IC.ok : ''}</span><span class="nm">${esc(i[0])}</span>${i[1] ? (g ? (other ? `<span class="mini">${esc(josa(P(g).name, '이', '가'))} 가져가요</span>` : '<span class="tag go">내가 가져가요</span>') : '<span class="tag warn">정할 것</span>') : ''}</div>`; }).join('')}`).join('')
+    : tab === 'gear' ? gearKeys.map(k => `<div class="gear"><div class="nm">${esc(k)}${t.gear[k] ? '' : '<span class="tag warn">아직</span>'}</div><div class="who">${t.members.map(u => `<button type="button" class="${t.gear[k] === u ? 'on' : ''}" data-gear="${esc(k)}" data-who="${u}">${av(u)}${esc(P(u).name)}</button>`).join('')}</div></div>`).join('')
+    : t.members.map(u => { const n = (t.check[u] || []).length, tot = D().template.flatMap(c => c.items).length; return `<div class="fi">${av(u)}<div class="t"><b>${esc(P(u).name)}</b><small>준비물 ${n}/${tot} · 공동 장비 ${Object.values(t.gear).filter(x => x === u).length}개</small></div></div>`; }).join('');
+  const n = nights(t);
+  openSheet(`<h2 class="sh-h">${esc(t.title)}</h2><div class="sh-sub">${esc(m.name)} · ${md(t.start)}${t.end !== t.start ? ' ~ ' + md(t.end) : ''} · ${n ? n + '박' : '당일'}</div>
+  <div class="seg"><button type="button" class="${tab === 'mine' ? 'on' : ''}" data-ttab="mine">내 준비물 ${mine.size}</button><button type="button" class="${tab === 'gear' ? 'on' : ''}" data-ttab="gear">공동 장비</button><button type="button" class="${tab === 'who' ? 'on' : ''}" data-ttab="who">참여 ${t.members.length}명</button></div>
+  <div>${body}</div>
+  <div class="row2" style="margin-top:16px">${t.members.includes(D().me) ? `<button class="btn ghost" type="button" data-jt="0">이번엔 빠질게요</button>` : `<button class="btn" type="button" data-jt="1">나도 갈게요</button>`}
+  ${t.by === D().me || P(D().me).role === 'admin' || S.demo ? `<button class="btn ghost" type="button" data-del-trip style="color:var(--danger)">산행 지우기</button>` : ''}</div>`);
+}
+function openNewTrip(mt) {
+  const today_ = today(), ms = D().mountains;
+  openSheet(`<h2 class="sh-h">새 산행</h2><div class="sh-sub">기본 준비물이 복사돼요</div>
+  <label class="field"><span>어디로</span><select id="ntMt">${ms.map(m => `<option value="${m.id}" ${m.id === mt ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select></label>
+  <label class="field"><span>이름</span><input id="ntTitle" placeholder="예: 선자령 겨울 1박"></label>
+  <div class="row2"><label class="field"><span>가는 날</span><input id="ntS" type="date" value="${AppKit.addDays(today_, 7)}"></label><label class="field"><span>오는 날</span><input id="ntE" type="date" value="${AppKit.addDays(today_, 8)}"></label></div>
+  <div class="field"><span>함께 가는 사람</span><div class="chips" style="flex-wrap:wrap">${D().people.map(p => `<button type="button" class="chip ${p.id === D().me ? 'on' : ''}" data-mem="${p.id}">${esc(p.name)}</button>`).join('')}</div></div>
+  <button class="btn" type="button" data-make-trip>만들기</button>`);
+}
+function openAddMt() {
+  openSheet(`<h2 class="sh-h">산·야영지 추가</h2><div class="sh-sub">지금 서 있는 곳의 위치로 넣을 수도 있어요</div>
+  <label class="field"><span>이름</span><input id="amName" placeholder="예: 무슨무슨 야영장"></label>
+  <div class="row2"><label class="field"><span>종류</span><select id="amKind"><option>산</option><option>야영지</option></select></label><label class="field"><span>고도(m)</span><input id="amAlt" type="number" inputmode="numeric"></label></div>
+  <button class="btn ghost" type="button" data-here>${IC.pin}지금 위치로 좌표 넣기</button><p class="mini ak-center" id="amPos" style="margin:6px 0 10px">좌표 없음</p>
+  <button class="btn" type="button" data-save-mt>추가하기</button>`);
+}
+
+/* 기본 준비물 고치기: 누르는 즉시 저장 */
+let tplDraft = null;
+function openTpl() {
+  tplDraft = tplDraft || JSON.parse(JSON.stringify(D().template));
+  openSheet(`<h2 class="sh-h">기본 준비물</h2><div class="sh-sub">'공동'을 켜면 산행에서 누가 가져갈지 정해요</div>
+  ${tplDraft.map((c, ci) => `<div class="cat">${esc(c.cat)}</div>${c.items.map((i, ii) => `<div class="ed"><span class="nm">${esc(i[0])}</span>
+    <button type="button" class="${i[1] ? 'on' : ''}" data-tshare="${ci}.${ii}">공동</button><button type="button" data-tdel="${ci}.${ii}" aria-label="빼기">빼기</button></div>`).join('')}`).join('')}
+  <div class="addrow"><select id="tCat">${tplDraft.map((c, ci) => `<option value="${ci}">${esc(c.cat)}</option>`).join('')}</select><input id="tName" placeholder="새 준비물"><button class="btn sm" type="button" data-tadd>넣기</button></div>`);
+}
+async function saveTpl(msg) { S.data = await api('template', { template: tplDraft }); save(); const top = SB.scrollTop; openTpl(); SB.scrollTop = top; tabs.redraw(); AppKit.toast(msg); }
+
+/* ── 로그인 (처음 한 번만 넣으면 이 휴대폰에 기억) ── */
+const gate = document.getElementById('gate');
+function gateFor(code, msg) {
+  if (code === 'auth') { LS.del('auth'); showGate(localStorage.getItem('sandojang-join') ? 'join' : 'login', msg); }
+  if (code === 'pending') showGate('pending');
+}
+function showGate(mode, msg) {
+  S.gate = mode; gate.hidden = false; AppKit.bootDone();
+  if (mode === 'pending') { gate.innerHTML = `<div class="box"><img src="icon-180-v1.png" alt=""><h2>승인을 기다리고 있어요</h2>
+    <p class="note">관리자가 승인하면 바로 쓸 수 있어요. 승인됐다고 들으면 아래를 눌러 주세요.</p><button class="btn" type="button" data-g="retry">다시 확인</button>
+    <button class="link" type="button" data-g="out">다른 이름으로 로그인</button></div>`; return; }
+  const join = mode === 'join';
+  gate.innerHTML = `<div class="box"><img src="icon-180-v1.png" alt=""><h2>산도장</h2><p class="note">${join ? '함께 쓰는 백패킹 기록장이에요.<br>이름과 숫자 6자리로 가입 신청해 주세요.' : '처음 한 번만 넣으면 이 휴대폰에 기억돼요.'}</p>
+    <div class="card"><label class="field"><span>이름</span><input id="gname" autocomplete="username" maxlength="12" placeholder="예: 홍길동"></label>
+    <label class="field"><span>비밀번호 (숫자 6자리)</span><input id="gpin" type="password" inputmode="numeric" autocomplete="${join ? 'new-password' : 'current-password'}" maxlength="6"></label>
+    <div class="err" id="gerr">${esc(msg || '')}</div><button class="btn" type="button" data-g="${join ? 'join' : 'login'}">${join ? '가입 신청' : '로그인'}</button></div>
+    <button class="link" type="button" data-g="${join ? 'tologin' : 'tojoin'}">${join ? '이미 가입했어요 · 로그인' : '처음이에요 · 가입 신청'}</button></div>`;
+}
+let gBusy = false, gLast = '';
+async function gateAct(k) {
+  if (k === 'tojoin' || k === 'tologin') return showGate(k === 'tojoin' ? 'join' : 'login');
+  if (k === 'out') { LS.del('auth'); return showGate('login'); }
+  if (k === 'retry') { gate.hidden = true; return refresh(); }
+  const name = document.getElementById('gname').value.trim(), pin = document.getElementById('gpin').value, err = document.getElementById('gerr');
+  if (!name) { err.textContent = '이름을 넣어 주세요'; return document.getElementById('gname').focus(); }
+  if (!/^\d{6}$/.test(pin)) { err.textContent = '비밀번호는 숫자 6자리예요'; return document.getElementById('gpin').focus(); }
+  const btn = gate.querySelector('[data-g="login"],[data-g="join"]'); gBusy = true; btn.disabled = true; btn.textContent = '확인하고 있어요…';
+  try {
+    const r = await fetch(S.api, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify({ action: k, name, pin, meta: AppKit.device() }) }).then(x => x.json());
+    if (!r.ok) throw new Error(r.message);
+    LS.set('auth', { token: r.data.token, name: r.data.name }); try { localStorage.removeItem('sandojang-join'); } catch (e) {}
+    if (r.data.status === 'pending') return showGate('pending');
+    gate.hidden = true; history.replaceState(null, '', location.pathname); await refresh();
+  } catch (e) {
+    err.textContent = /fetch|Load failed/.test(e.message) ? '서버에 연결하지 못했어요' : e.message;
+    const el = document.getElementById('gpin'); el.value = ''; gLast = ''; el.focus();
+  } finally { gBusy = false; if (btn.isConnected) { btn.disabled = false; btn.textContent = k === 'join' ? '가입 신청' : '로그인'; } }
+}
+/* 비밀번호 6자리를 채우면 자동 로그인 (아이폰 자동 채우기는 input 이 안 올 때가 있어 keyup·change·paste 도) */
+function pinAuto(e) {
+  if (e.target.id !== 'gpin' || S.gate !== 'login') return;
+  const el = e.target, v = el.value.replace(/\D/g, '').slice(0, 6); if (v !== el.value) el.value = v;
+  if (v.length < 6) { gLast = ''; return; }
+  if (gBusy || v === gLast || !document.getElementById('gname').value.trim()) return;
+  gLast = v; el.blur(); gateAct('login');
+}
+['input', 'keyup', 'change'].forEach(t => gate.addEventListener(t, pinAuto));
+gate.addEventListener('paste', e => setTimeout(() => pinAuto(e), 0));
+gate.addEventListener('click', e => { const b = e.target.closest('[data-g]'); if (b) gateAct(b.dataset.g); });
+
+/* ── 도착 체크: 위치는 판정에만 쓰고, 서버에는 '어느 산·인증 여부·거리(100m 단위)'만 보낸다 ── */
+function getPos() {
+  return new Promise((ok, no) => {
+    if (S.demo) { const m = MT(S.cur || nearest().m.id); return setTimeout(() => ok({ lat: m.lat + .0006, lon: m.lon + .0004, acc: 18 }), 600); }
+    if (!navigator.geolocation) return no('이 휴대폰에서는 위치를 쓸 수 없어요.');
+    navigator.geolocation.getCurrentPosition(p => ok({ lat: p.coords.latitude, lon: p.coords.longitude, acc: p.coords.accuracy }),
+      e => no(e.code === 1 ? 'PERM' : e.code === 3 ? '위치를 찾는 데 너무 오래 걸려요. 하늘이 트인 곳에서 다시 해 주세요.' : '위치를 찾지 못했어요. 잠시 후 다시 해 주세요.'),
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 });
+  });
+}
+async function checkIn(btn, id) {
+  btn.disabled = true; const old = btn.innerHTML; btn.innerHTML = '위치 확인 중…';
+  try {
+    const pos = await getPos(); LS.set('lastPos', [pos.lat, pos.lon]);
+    const R = D().radius || 300;
+    if (id && MT(id).lat == null) {   // 좌표가 아직 없는 산(공공데이터에 좌표가 빠졌거나 직접 추가): 지금 위치를 정상으로 저장할지 묻는다
+      S.newPos = pos;
+      return openMt(id, `<div class="result warn"><b>이 산은 아직 좌표가 없어요</b>지금 정상(야영지)에 있다면 이 위치를 저장해 주세요. 다음부터 모두가 도착 체크할 수 있어요.</div>
+        <button class="btn" type="button" data-setpos="${id}" style="margin-bottom:10px">${IC.pin}지금 위치를 ${esc(MT(id).name)} 좌표로 저장</button>`);
+    }
+    const list = (id ? [MT(id)] : D().mountains.filter(m => m.lat != null)).map(m => ({ m, km: kmOf(pos.lat, pos.lon, m.lat, m.lon) })).sort((a, b) => a.km - b.km);
+    if (!list.length) throw new Error('좌표가 있는 산이 없어요');
+    const { m, km } = list[0], dist = km * 1000, far = km > 2;
+    if (far) {   // 2km 넘게 떨어져 있으면 기록하지 않는다 (집에서 잘못 눌러도 남지 않게)
+      const html = `<div class="result warn"><b>산에서 멀리 있어요</b>${id ? '' : '가장 가까운 '}${esc(m.name)}에서 ${km < 10 ? km.toFixed(1) : Math.round(km)}km 떨어져 있어요. 지난 산행이면 아래 '다녀온 날 기록'으로 남겨 주세요.</div>`;
+      return openMt(m.id, html);
+    }
+    const bad = pos.acc > 150, verified = !bad && dist <= R + Math.min(pos.acc, 100);
+    let res;
+    if (bad) res = `<div class="result warn"><b>위치가 정확하지 않아요 (±${Math.round(pos.acc)}m)</b>실내나 숲 속이면 오차가 커요. 하늘이 보이는 곳에서 한 번 더 눌러 주세요. 지금은 '기록만' 남겼어요.</div>`;
+    else if (verified) res = `<div class="result go"><b>인증됐어요! ${esc(m.name)}</b>정상(야영지)에서 ${Math.round(dist)}m 안이에요. ${AppKit.num(m.alt)}m 도착을 기록했어요.</div>`;
+    else res = `<div class="result warn"><b>기록만 남겼어요</b>${esc(m.name)}에서 ${dist < 1000 ? Math.round(dist) + 'm' : km.toFixed(1) + 'km'} 떨어져 있어요. ${R}m 안으로 가서 다시 누르면 '인증됨'으로 바뀌어요.</div>`;
+    S.data = await api('checkin', { mt: m.id, verified, dist: Math.round(dist / 100) * 100 }); save();
+    openMt(m.id, res); tabs.redraw();
+  } catch (e) {
+    const msg = e === 'PERM' ? `<div class="result stop"><b>위치 권한이 꺼져 있어요</b>아이폰 설정 → 개인정보 보호 및 보안 → 위치 서비스 → Safari 웹 사이트 → '앱을 사용하는 동안'으로 바꾼 뒤 다시 눌러 주세요.</div>`
+      : `<div class="result stop"><b>위치를 확인하지 못했어요</b>${esc(e.message || e)}</div>`;
+    if (sheet.isOpen && S.cur) openMt(S.cur, msg); else openSheet(msg);
+  } finally { btn.disabled = false; btn.innerHTML = old; }
+}
+
+/* ── 인증샷: 찍기·앨범 → 산 고르기 → 줄이고 도장 찍어 올리기 ── */
+let shotFor = null;
+function pickShot(kind, mt) { shotFor = mt || S.cur || null; document.getElementById(kind === 'alb' ? 'pickAlb' : 'pickCam').click(); }
+function askShot(mt) {
+  openSheet(`<h2 class="sh-h">인증샷</h2><div class="sh-sub">찍거나 앨범에서 골라 주세요</div>
+  <div class="row2"><button class="btn" type="button" data-shot="cam" data-for="${mt || ''}">${IC.cam}찍기</button><button class="btn ghost" type="button" data-shot="alb" data-for="${mt || ''}">${IC.img}앨범에서</button></div>`);
+}
+async function onPicked(file) {
+  if (!file) return;
+  const small = await AppKit.toJpeg(file, 1600, .85);
+  const mt = shotFor || nearest().m.id, ms = D().mountains;
+  openSheet(`<h2 class="sh-h">어느 산 사진인가요?</h2><img class="bigimg" id="prev" src="${small}" alt="">
+  <label class="field"><span>산</span><select id="shotMt">${ms.map(m => `<option value="${m.id}" ${m.id === mt ? 'selected' : ''}>${esc(m.name)} (${AppKit.num(m.alt)}m)</option>`).join('')}</select></label>
+  <button class="btn" type="button" data-upload>날짜·산 이름 찍어서 올리기</button>`);
+  S.pending = small;
+}
+function openPhoto(id) {
+  const p = D().photos.find(x => x.id === id); if (!p) return; const m = MT(p.mt);
+  openSheet(`<img class="bigimg" data-ph="${p.id}" data-size="f" alt=""><div class="kv">${av(p.user)}<div><b>${esc(P(p.user).name)}</b><div class="mini">${esc(m.name)} · ${md(p.date)}</div></div>
+  ${p.user === D().me ? `<button class="btn sm ghost" type="button" data-del-photo="${p.id}">지우기</button>` : ''}</div>`);
+}
+
+/* ── 초대·로그인 (올포오션 방식) ── */
+function inviteText() {
+  const url = location.origin + location.pathname.replace(/index\.html$/, '') + '?join';
+  return { url, text: `[산도장] 백패킹 기록 앱 초대예요 (${P(D().me).name})
+정복한 산·도착 인증·준비물·인증샷을 함께 써요.
+
+1) 아래 주소를 아이폰은 Safari, 안드로이드는 Chrome으로 열기
+2) 홈 화면에 추가 (아이폰: 공유 → 홈 화면에 추가)
+3) 홈 화면 아이콘으로 열고 이름·숫자 6자리 비밀번호로 가입 신청
+4) 관리자가 승인하면 바로 써요
+
+${url}` };
+}
+async function invite(copyOnly) {
+  const { url, text } = inviteText();
+  if (!copyOnly && navigator.share) { try { await navigator.share({ title: '산도장 초대', text }); return; } catch (e) { if (e.name === 'AbortError') return; } }
+  try { await navigator.clipboard.writeText(text); AppKit.toast('초대 문구를 복사했어요. 카톡에 붙여 넣으세요'); } catch (e) { prompt('아래 주소를 복사해 보내세요', url); }
+}
+
+/* ── 지도 어댑터 (assets/snippets/map-adapter.js) ── */
+/* 지도 어댑터: 카카오맵(JS 키) 우선, 안 되면 Leaflet+OSM — 올포오션(badapan)에서 실제 쓰는 코드 그대로. 앱에 맞게 S·esc·AppKit 이름만 맞춰 붙인다 */
+const MK = (() => {
+  const L_ = window.L;
+  const BASES = {
+    kakao: { name: '카카오', kakao: 'ROADMAP' },
+    sky: { name: '위성', kakao: 'HYBRID' },
+    sea: { name: '해도', url: 'https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Base/MapServer/tile/{z}/{y}/{x}', o: { maxNativeZoom: 13, attribution: 'Esri, GEBCO, NOAA' },
+      over: 'https://server.arcgisonline.com/ArcGIS/rest/services/Ocean/World_Ocean_Reference/MapServer/tile/{z}/{y}/{x}' },
+    std: { name: 'OSM', url: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png', o: { maxNativeZoom: 19, attribution: '© OpenStreetMap' } },
+  };
+  const SEAMARK = 'https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png';
+  const views = {}, live = new Set();
+  const KOREA = [[33.0, 124.6], [38.7, 131.0]];
+  let kakaoState = KAKAO_KEY ? 'idle' : 'off', kakaoWait = [];
+  const wanted = () => { const b = LS.get('mapBase', 'kakao'); return BASES[b] ? b : 'kakao'; };
+  const base = () => { const b = wanted(); return BASES[b].kakao && kakaoState === 'off' ? 'std' : b; };
+  const marks = () => LS.get('seamark', false);
+  const z2lv = z => Math.max(1, Math.min(14, Math.round(20 - z)));   // Leaflet 확대 단계 ↔ 카카오 레벨
+  const lv2z = lv => 20 - lv;
+
+  /* 카카오 지도 SDK는 처음 필요할 때 한 번만 불러온다. 8초 안에 안 뜨면 Leaflet 으로 바꾼다 */
+  function loadKakao() {
+    return new Promise(ok => {
+      if (kakaoState === 'ready') return ok(true);
+      if (kakaoState === 'off') return ok(false);
+      kakaoWait.push(ok);
+      if (kakaoState === 'loading') return;
+      kakaoState = 'loading';
+      const done = v => { kakaoState = v ? 'ready' : 'off'; const w = kakaoWait; kakaoWait = []; w.forEach(f => f(v)); if (!v) AppKit.toast('카카오지도를 불러오지 못해 기본 지도로 보여 줘요'); };
+      const t = setTimeout(() => done(false), 8000);
+      const sc = document.createElement('script');
+      sc.src = `https://dapi.kakao.com/v2/maps/sdk.js?appkey=${KAKAO_KEY}&autoload=false`;
+      sc.referrerPolicy = 'origin';
+      sc.onload = () => { try { kakao.maps.load(() => { clearTimeout(t); done(true); }); } catch (e) { clearTimeout(t); done(false); } };
+      sc.onerror = () => { clearTimeout(t); done(false); };
+      document.head.append(sc);
+    });
+  }
+
+  /* 지도 칸 하나 만들기. ready(h) 는 지도가 준비되면 불린다 (카카오는 처음 한 번 비동기) */
+  function make(el, opts, ready) {
+    el.innerHTML = '<div class="mk-canvas"></div>';
+    const canvas = el.firstChild;
+    const b = base();
+    if (BASES[b].kakao) {
+      el.classList.add('mk-wait');
+      loadKakao().then(ok => { el.classList.remove('mk-wait'); if (!el.isConnected) return; if (!ok) return make(el, opts, ready); ready(kakaoMap(el, canvas, opts, b)); });
+      return;
+    }
+    if (!L_) { el.innerHTML = '<div class="nomap">지도를 불러오지 못했어요</div>'; return; }
+    ready(leafletMap(el, canvas, opts, b));
+  }
+  function startView(h, { key, fit, pts = [], zoom = 12, center }) {
+    if (center) h.view(center[0], center[1], zoom);
+    else if (pts.length > 1) h.fit(pts, fit || 11);
+    else if (pts.length === 1) h.view(pts[0][0], pts[0][1], 9);
+    else h.view(36.0, 127.6, 6.5);   // 지점이 없으면 우리나라 전체
+  }
+
+  function leafletMap(el, canvas, o, b) {
+    const it = o.interactive !== false;
+    const m = L_.map(canvas, { zoomControl: false, attributionControl: true, zoomSnap: .5, minZoom: 5, maxZoom: 18, maxBounds: [[28, 118], [44, 138]],
+      dragging: it, scrollWheelZoom: it, touchZoom: it, doubleClickZoom: it, boxZoom: it, keyboard: it });
+    m.attributionControl.setPrefix(false);
+    const B = BASES[b];
+    L_.tileLayer(B.url, { maxZoom: 18, ...B.o }).addTo(m);
+    if (B.over) L_.tileLayer(B.over, { maxZoom: 18, maxNativeZoom: 13, opacity: .9 }).addTo(m);
+    if (marks()) L_.tileLayer(SEAMARK, { minZoom: 9, maxZoom: 18, opacity: .95 }).addTo(m);
+    const h = {
+      el, kind: 'leaflet',
+      add(lat, lon, html, { onClick, z = 0 } = {}) {
+        const mk = L_.marker([lat, lon], { icon: L_.divIcon({ html, className: 'mk', iconSize: [0, 0] }), interactive: !!onClick, zIndexOffset: z }).addTo(m);
+        if (onClick) mk.on('click', onClick);
+        return { set: (a, c) => mk.setLatLng([a, c]), remove: () => mk.remove() };
+      },
+      draggable(lat, lon, onEnd) {
+        const mk = L_.marker([lat, lon], { draggable: true, icon: L_.divIcon({ html: '<div class="mpin pick"><i></i></div>', className: 'mk', iconSize: [0, 0] }) }).addTo(m);
+        mk.on('dragend', () => { const p = mk.getLatLng(); onEnd(p.lat, p.lng); });
+        return { set: (a, c) => mk.setLatLng([a, c]), remove: () => mk.remove() };
+      },
+      onClick(fn) { m.on('click', e => fn(e.latlng.lat, e.latlng.lng)); },
+      view(lat, lon, z) { m.setView([lat, lon], z, { animate: false }); },
+      zoom: () => m.getZoom(), zoomBy: d => d > 0 ? m.zoomIn() : m.zoomOut(),
+      fit(pts, maxZ = 11) { m.fitBounds(L_.latLngBounds(pts), { padding: [20, 20], maxZoom: maxZ, animate: false }); m.setZoom(m.getZoom() - 1, { animate: false }); },
+      relayout() { m.invalidateSize(); }, destroy() { m.remove(); },
+    };
+    startView(h, o);
+    setTimeout(() => { if (!el.isConnected || el.dataset.touched || (o.key && views[o.key])) return; m.invalidateSize(); startView(h, o); }, 400);
+    if (o.key) { let touched = false; el.addEventListener('pointerdown', () => { touched = true; el.dataset.touched = 1; }); m.on('moveend', () => { if (!touched) return; const c = m.getCenter(); views[o.key] = { lat: c.lat, lon: c.lng, z: m.getZoom() }; }); }
+    finish(h, o);
+    return h;
+  }
+
+  function kakaoMap(el, canvas, o, b) {
+    const K = kakao.maps, it = o.interactive !== false;
+    const m = new K.Map(canvas, { center: new K.LatLng(36, 127.8), level: 12, draggable: it, scrollwheel: it, disableDoubleClickZoom: !it });
+    m.setMapTypeId(K.MapTypeId[BASES[b].kakao]);
+    if (!it) m.setZoomable(false);
+    m.setMinLevel?.(1); m.setMaxLevel?.(14);
+    const overlay = (lat, lon, html, onClick, z) => {
+      const box = document.createElement('div'); box.className = 'mk'; box.style.cssText = 'position:relative;width:0;height:0'; box.innerHTML = html;
+      if (onClick) { box.style.cursor = 'pointer'; box.firstElementChild?.addEventListener('click', e => { e.stopPropagation(); onClick(); }); }
+      else box.firstElementChild && (box.firstElementChild.style.pointerEvents = 'none');
+      const ov = new K.CustomOverlay({ position: new K.LatLng(lat, lon), content: box, xAnchor: 0, yAnchor: 0, zIndex: 3 + (z || 0) / 100, clickable: !!onClick });
+      ov.setMap(m);
+      return { set: (a, c) => ov.setPosition(new K.LatLng(a, c)), remove: () => ov.setMap(null) };
+    };
+    const PICK = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" width="30" height="30"><circle cx="15" cy="15" r="11" fill="#007ab5" stroke="#fff" stroke-width="4"/></svg>');
+    const h = {
+      el, kind: 'kakao',
+      add(lat, lon, html, { onClick, z = 0 } = {}) { return overlay(lat, lon, html, onClick, z); },
+      draggable(lat, lon, onEnd) {
+        const mk = new K.Marker({ position: new K.LatLng(lat, lon), draggable: true, image: new K.MarkerImage(PICK, new K.Size(30, 30), { offset: new K.Point(15, 15) }) });
+        mk.setMap(m);
+        K.event.addListener(mk, 'dragend', () => { const p = mk.getPosition(); onEnd(p.getLat(), p.getLng()); });
+        return { set: (a, c) => mk.setPosition(new K.LatLng(a, c)), remove: () => mk.setMap(null) };
+      },
+      onClick(fn) { K.event.addListener(m, 'click', e => fn(e.latLng.getLat(), e.latLng.getLng())); },
+      view(lat, lon, z) { m.setLevel(z2lv(z)); m.setCenter(new K.LatLng(lat, lon)); },
+      zoom: () => lv2z(m.getLevel()), zoomBy: d => m.setLevel(m.getLevel() - d, { animate: true }),
+      // 모든 지점이 들어오게 맞춘 뒤 한 단계 더 넓게, 가운데는 지점들의 한가운데로 (한쪽으로 쏠리지 않게)
+      fit(pts) { const bd = new K.LatLngBounds(); pts.forEach(p => bd.extend(new K.LatLng(p[0], p[1]))); m.setBounds(bd, 20, 20, 20, 20);
+        m.setLevel(Math.min(14, m.getLevel() + 1)); m.setCenter(new K.LatLng((Math.min(...pts.map(p => p[0])) + Math.max(...pts.map(p => p[0]))) / 2, (Math.min(...pts.map(p => p[1])) + Math.max(...pts.map(p => p[1]))) / 2)); },
+      relayout() { const c = m.getCenter(); m.relayout(); m.setCenter(c); }, destroy() {},
+    };
+    startView(h, o);
+    setTimeout(() => { if (!el.isConnected || el.dataset.touched || (o.key && views[o.key])) return; m.relayout(); startView(h, o); }, 400);
+    if (o.key) { let touched = false; el.addEventListener('pointerdown', () => { touched = true; el.dataset.touched = 1; }); K.event.addListener(m, 'idle', () => { if (!touched) return; const c = m.getCenter(); views[o.key] = { lat: c.getLat(), lon: c.getLng(), z: lv2z(m.getLevel()) }; }); }
+    finish(h, o);
+    return h;
+  }
+
+  /* 오른쪽 위 버튼: 확대·축소 · 전체 보기 · 내 위치 · 바탕 바꾸기 (두 지도 공통) */
+  function finish(h, o) {
+    live.add(h);
+    if (o.controls === false) return;
+    const d = document.createElement('div'); d.className = 'mk-tools';
+    d.innerHTML = `<button type="button" data-mk="plus" aria-label="확대">＋</button><button type="button" data-mk="minus" aria-label="축소">－</button>
+      <button type="button" data-mk="all" aria-label="전체 보기"><svg class="ak-ic" viewBox="0 0 24 24"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg></button>
+      <button type="button" data-mk="me" aria-label="내 위치"><svg class="ak-ic" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><circle cx="12" cy="12" r="7"/></svg></button>
+      <button type="button" data-mk="base" class="txt">${BASES[base()].name}</button>`;
+    d.addEventListener('click', e => {
+      const k = e.target.closest('[data-mk]')?.dataset.mk; if (!k) return; e.stopPropagation();
+      if (k === 'plus') h.zoomBy(1); if (k === 'minus') h.zoomBy(-1);
+      if (k === 'all') { if (o.key) delete views[o.key]; delete h.el.dataset.touched; const p = o.pts || []; p.length > 1 ? h.fit(p) : p.length ? h.view(p[0][0], p[0][1], 9) : h.view(35.9, 127.8, 6.5); }
+      if (k === 'me') myPos().then(p => { h.view(p[0], p[1], Math.max(h.zoom(), 12)); h.add(p[0], p[1], '<div class="medot"></div>'); }, err => AppKit.toast(err));
+      if (k === 'base') { const ks = Object.keys(BASES), n = ks[(ks.indexOf(base()) + 1) % ks.length]; LS.set('mapBase', n); AppKit.toast(BASES[n].name + ' 지도로 바꿨어요'); remount(); }
+    });
+    h.el.append(d);
+  }
+  /* 내 위치: 화면에서 지도를 옮기는 데만 쓰고 서버에는 보내지 않는다 */
+  const myPos = () => new Promise((ok, no) => {
+    if (!navigator.geolocation) return no('이 기기에서는 위치를 쓸 수 없어요');
+    navigator.geolocation.getCurrentPosition(p => ok([p.coords.latitude, p.coords.longitude]), () => no('위치 권한을 허용해 주세요'), { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 });
+  });
+  function clear(root) { live.forEach(h => { if (!root || root.contains(h.el)) { h.destroy(); live.delete(h); } }); }
+  const inside = root => [...live].filter(h => root.contains(h.el));
+  let remount = () => {};
+  return { make, clear, inside, myPos, setRemount: f => remount = f, BASES, get base() { return wanted(); }, views };
+})();
+MK.setRemount(() => drawMtMap());
+
+/* ── 탭 ── */
+const tabs = AppKit.tabs({
+  ids: ['home', 'mt', 'trip', 'photo', 'set'], remember: 'sandojang-tab',
+  render(id) {
+    const sc = document.getElementById('sc'); MK.clear(sc);
+    sc.innerHTML = id === 'home' ? homeA() : id === 'mt' ? mtTab() : id === 'trip' ? tripTab() : id === 'photo' ? photoTab() : setTab();
+    fillPhotos(sc); if (id === 'mt') drawMtMap(); bell();
+  },
+});
+function bell() { const n = D().admin?.pending?.length || 0, b = document.getElementById('bell'); b.querySelector('em')?.remove(); if (n) b.insertAdjacentHTML('beforeend', `<em>${n}</em>`); }
+
+document.addEventListener('click', async e => {
+  const t = e.target, q = s => t.closest(s);
+  let b;
+  if ((b = q('[data-check]'))) return checkIn(b, b.dataset.check || (sheet.isOpen ? S.cur : null));
+  if ((b = q('[data-shot]'))) { const k = b.dataset.shot; if (k === 'cam' || k === 'alb') return pickShot(k, b.dataset.for || (sheet.isOpen ? S.cur : null)); return askShot(k || null); }
+  if ((b = q('[data-open-photo]'))) return openPhoto(b.dataset.openPhoto);
+  if ((b = q('[data-trip]'))) { S.tripTab = 'mine'; return openTrip(b.dataset.trip); }
+  if ((b = q('[data-mt]'))) return openMt(b.dataset.mt);
+  if ((b = q('[data-go]'))) return tabs.go(b.dataset.go);
+  if ((b = q('[data-mtf]'))) { S.mtFilter = b.dataset.mtf; LS.set('mtFilter', S.mtFilter); return tabs.redraw(); }
+  if ((b = q('[data-pby]'))) { S.photoBy = b.dataset.pby; LS.set('photoBy', S.photoBy); return tabs.redraw(); }
+  if ((b = q('[data-ttab]'))) { S.tripTab = b.dataset.ttab; return openTrip(S.curTrip); }
+  if ((b = q('[data-ck]'))) { const on = !b.classList.contains('on'); S.data = await api('check', { trip: S.curTrip, item: b.dataset.ck, on }); save(); const top = SB.scrollTop; openTrip(S.curTrip); SB.scrollTop = top; return tabs.redraw(); }
+  if ((b = q('[data-gear]'))) { const t0 = D().trips.find(x => x.id === S.curTrip); const who = t0.gear[b.dataset.gear] === b.dataset.who ? '' : b.dataset.who;
+    S.data = await api('gear', { trip: S.curTrip, item: b.dataset.gear, who }); save(); const top = SB.scrollTop; openTrip(S.curTrip); SB.scrollTop = top; AppKit.toast(who ? `${josa(P(who).name, '이', '가')} ${josa(b.dataset.gear, '을', '를')} 가져가요` : '담당을 비웠어요'); return tabs.redraw(); }
+  if ((b = q('[data-new-trip]'))) return openNewTrip(b.dataset.newTrip);
+  if ((b = q('[data-mem]'))) return b.classList.toggle('on');
+  if ((b = q('[data-make-trip]'))) {
+    const mt = document.getElementById('ntMt').value, s = document.getElementById('ntS').value, en = document.getElementById('ntE').value;
+    if (!s || !en || en < s) return AppKit.toast('오는 날이 가는 날보다 앞이에요');
+    const members = [...SB.querySelectorAll('[data-mem].on')].map(x => x.dataset.mem);
+    const title = document.getElementById('ntTitle').value.trim() || MT(mt).name.split(' ')[0] + ' 산행';
+    S.data = await api('trip', { trip: { title, mt, start: s, end: en, members } }); save(); sheet.close(); AppKit.toast('산행을 만들었어요. 준비물을 챙겨 보세요'); return tabs.go('trip');
+  }
+  if ((b = q('[data-upload]'))) {
+    const m = MT(document.getElementById('shotMt').value);
+    const data = await stamp(S.pending, { date: today(), name: m.name, alt: m.alt }), thumb = await shrink(data, 480);
+    S.data = await api('photo', { mt: m.id, data, thumb }); save(); save(); sheet.close(); AppKit.toast('인증샷을 올렸어요'); return tabs.go('photo');
+  }
+  if ((b = q('[data-del-photo]'))) { if (!AppKit.sure(b, '정말 지울까요?')) return; S.data = await api('delPhoto', { id: b.dataset.delPhoto }); sheet.close(); AppKit.toast('사진을 지웠어요'); return tabs.redraw(); }
+  if ((b = q('[data-add-mt]'))) return openAddMt();
+  if ((b = q('[data-here]'))) { try { const p = await getPos(); S.newPos = p; document.getElementById('amPos').textContent = `${p.lat.toFixed(5)}, ${p.lon.toFixed(5)} (±${Math.round(p.acc)}m)`; } catch (er) { AppKit.toast(er === 'PERM' ? '위치 권한을 허용해 주세요' : String(er.message || er)); } return; }
+  if ((b = q('[data-save-mt]'))) {
+    const name = document.getElementById('amName').value.trim(); if (!name) return AppKit.toast('이름을 넣어 주세요'); if (!S.newPos) return AppKit.toast('먼저 좌표를 넣어 주세요');
+    S.data = await api('addMt', { mt: { name, kind: document.getElementById('amKind').value, alt: +document.getElementById('amAlt').value || 0, lat: S.newPos.lat, lon: S.newPos.lon, region: '직접 추가', top100: false } });
+    sheet.close(); AppKit.toast(josa(name, '을', '를') + ' 추가했어요'); return tabs.redraw();
+  }
+  if ((b = q('[data-setpos]'))) { const id = b.dataset.setpos; S.data = await api('addMt', { id, mt: { name: MT(id).name, lat: S.newPos.lat, lon: S.newPos.lon } }); save(); AppKit.toast('좌표를 저장했어요. 이제 도착 체크를 눌러 주세요'); return openMt(id); }
+  if ((b = q('[data-past]'))) { const d = document.getElementById('pastDate').value; if (!d || d > today()) return AppKit.toast('날짜를 확인해 주세요');
+    S.data = await api('checkin', { mt: b.dataset.past, verified: false, date: d }); save(); AppKit.toast(md(d) + ' 기록을 남겼어요'); openMt(b.dataset.past); return tabs.redraw(); }
+  if ((b = q('[data-jt]'))) { S.data = await api('joinTrip', { trip: S.curTrip, on: b.dataset.jt === '1' }); save(); openTrip(S.curTrip); AppKit.toast(b.dataset.jt === '1' ? '함께 가요!' : '이번 산행에서 빠졌어요'); return tabs.redraw(); }
+  if ((b = q('[data-del-trip]'))) { if (!AppKit.sure(b, '정말 지울까요?')) return; S.data = await api('delTrip', { trip: S.curTrip }); save(); sheet.close(); AppKit.toast('산행을 지웠어요'); return tabs.redraw(); }
+  if ((b = q('[data-edit-tpl]'))) { tplDraft = null; return openTpl(); }
+  if ((b = q('[data-tshare]'))) { const [c, i] = b.dataset.tshare.split('.').map(Number), it = tplDraft[c].items[i]; it[1] ? it.splice(1) : it[1] = 1; return saveTpl(it[1] ? `${it[0]}: 공동 장비로 바꿨어요` : `${it[0]}: 각자 챙기기로 바꿨어요`); }
+  if ((b = q('[data-tdel]'))) { if (!AppKit.sure(b, '뺄까요?')) return; const [c, i] = b.dataset.tdel.split('.').map(Number), nm = tplDraft[c].items[i][0]; tplDraft[c].items.splice(i, 1); return saveTpl(josa(nm, '을', '를') + ' 뺐어요'); }
+  if ((b = q('[data-tadd]'))) { const nm = document.getElementById('tName').value.trim(); if (!nm) return AppKit.toast('준비물 이름을 넣어 주세요'); tplDraft[+document.getElementById('tCat').value].items.push([nm]); return saveTpl(josa(nm, '을', '를') + ' 넣었어요'); }
+  if ((b = q('[data-reject]'))) { if (!AppKit.sure(b, '거절할까요?')) return; S.data = await api('reject', { id: b.dataset.reject }); save(); AppKit.toast('거절했어요'); return tabs.redraw(); }
+  if ((b = q('[data-logout]'))) { if (!AppKit.sure(b, '로그아웃할까요?')) return; LS.del('auth'); LS.del('data'); location.reload(); return; }
+  if ((b = q('[data-invite]'))) return invite(b.dataset.invite === 'copy');
+  if ((b = q('[data-approve]'))) { const nm = (D().admin?.pending || []).find(x => x.id === b.dataset.approve)?.name || ''; S.data = await api('approve', { id: b.dataset.approve }); save(); AppKit.toast(nm + '님을 승인했어요'); return tabs.redraw(); }
+  if ((b = q('[data-radius]'))) { S.data = await api('setting', { radius: +b.dataset.radius }); save(); AppKit.toast(`이제 ${b.dataset.radius}m 안이면 인증돼요`); return tabs.redraw(); }
+  if ((b = q('[data-connect]'))) { const u = document.getElementById('apiUrl').value.trim(); if (!/^https:\/\/script\.google\.com\/.+\/exec/.test(u)) return AppKit.toast('…/exec 로 끝나는 주소를 넣어 주세요'); LS.set('api', u); LS.del('data'); location.hash = ''; location.reload(); return; }
+  if (q('#bell')) { if ((D().admin?.pending || []).length) return tabs.go('set'); return AppKit.toast('새 소식이 없어요'); }
+  if (q('#refresh')) return refresh();
+});
+['pickCam', 'pickAlb'].forEach(id => document.getElementById(id).addEventListener('change', e => { onPicked(e.target.files[0]); e.target.value = ''; }));
+
+/* ── 불러오기 ── */
+const seq = AppKit.sequence();
+async function refresh() {
+  if (!S.demo && !LS.get('auth', null)) return;   // 로그인 전에는 부르지 않는다
+  const mine = seq.next();
+  try {
+    const d = await AppKit.spin('#refresh', api('load'));
+    if (!seq.is(mine)) return;
+    S.data = d; S.lastOk = new Date(); LS.set('data', d);
+    document.getElementById('dot').className = 'ak-dot live'; document.getElementById('st').textContent = AppKit.hhmm(S.lastOk) + ' 갱신';
+    const sig = JSON.stringify(d); if (sig === S.sig) return; S.sig = sig;
+    if (!sheet.isOpen && !AppKit.editing()) tabs.redraw();
+  } catch (e) {
+    document.getElementById('dot').className = 'ak-dot off';
+    document.getElementById('st').textContent = S.lastOk ? AppKit.hhmm(S.lastOk) + ' 이후 연결 안 됨' : '연결 안 됨';
+    AppKit.toast(/fetch|Load failed/.test(e.message) ? '서버에 연결하지 못했어요. 잠시 후 다시 해주세요.' : e.message);
+  }
+}
+AppKit.poll(refresh, 60000, () => sheet.isOpen || !gate.hidden);
+if (!S.demo && !LS.get('auth', null)) showGate(localStorage.getItem('sandojang-join') ? 'join' : 'login');
+if (S.data) AppKit.bootDone();
+if (S.demo || LS.get('auth', null)) refresh().finally(AppKit.bootDone);
+if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js');
+</script>
+</body>
+</html>
