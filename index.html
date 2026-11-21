@@ -171,7 +171,8 @@ button{touch-action:manipulation}
 .btn.ghost{background:var(--solid);color:var(--ink);border:1px solid var(--line)}
 .btn.sm{min-height:38px;font-size:13.5px;border-radius:11px;width:auto;padding:6px 12px}
 .btn .sub{display:block;font-size:11px;font-weight:500;color:var(--muted)}
-.row2{display:flex;gap:8px}.row2>*{flex:1}
+.row2{display:flex;gap:8px}.row2>*{flex:1;min-width:0}
+.field input,.addrow input{min-width:0;max-width:100%}
 .chips{display:flex;gap:6px;overflow-x:auto;margin:0 0 10px;padding-bottom:2px;scrollbar-width:none}
 .chip{flex:none;border:0;border-radius:999px;background:var(--chip);color:var(--ink);font:inherit;font-size:13px;font-weight:600;padding:7px 13px;cursor:pointer}
 .chip.on{background:var(--accent);color:var(--on-accent)}
@@ -242,6 +243,8 @@ button{touch-action:manipulation}
 .mt .t{flex:1;min-width:0}
 .mt h4{margin:0 0 3px;font-size:16px;color:var(--title);display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 .mt p{margin:0;font-size:12.5px;color:var(--muted)}
+.list [hidden]{display:none}
+.mtq{width:100%;border:1px solid var(--line);background:var(--solid);color:var(--ink);border-radius:12px;padding:10px 12px;margin:0 0 10px;font:inherit;font-size:16px}
 .list .card{padding:12px 14px;margin-bottom:8px}
 
 /* 시트 */
@@ -281,7 +284,7 @@ button{touch-action:manipulation}
 .gate .err{color:var(--danger);font-size:13px;min-height:18px;margin:-4px 2px 8px;text-align:center}
 .gate .link{background:none;border:0;color:var(--title);font:inherit;font-size:14px;font-weight:700;margin-top:14px;padding:8px;cursor:pointer}
 .ed{display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--line);font-size:15px}
-.ed .nm{flex:1}.ed button{border:0;background:var(--chip);color:var(--muted);border-radius:9px;min-width:36px;height:32px;font:inherit;font-size:12px;font-weight:700;cursor:pointer}
+.ed .nm{flex:1}.ed button{border:0;background:var(--chip);color:var(--muted);border-radius:10px;min-width:48px;height:40px;font:inherit;font-size:12px;font-weight:700;cursor:pointer}
 .ed button.on{background:var(--p-go);color:var(--p-go-ink)}
 .addrow{display:flex;gap:6px;margin:8px 0 4px}.addrow input,.addrow select{border:1px solid var(--line);background:var(--solid);color:var(--ink);border-radius:10px;padding:8px;font:inherit;font-size:16px;min-width:0}
 .addrow input{flex:1}
@@ -640,7 +643,7 @@ const AppKit = (() => {
 })();
 </script>
 <script>
-const BUILD = '1795278339';
+const BUILD = '1795278767';
 AppKit.fixViewport({ gap: false });
 /* 초대 링크(?join)는 새 버전 자동 열기(?v=)가 주소를 바꿔도 잊지 않게 먼저 기억해 둔다 */
 try { if (new URLSearchParams(location.search).has('join')) localStorage.setItem('sandojang-join', '1'); } catch (e) {}
@@ -737,6 +740,7 @@ function demoApi(action, p) {
   if (action === 'addCar') { const c = p.car, id = 'c' + Date.now(); D.carspots.push({ ...c, id, region: '직접 추가', by: D.me, logs: c.date ? [{ id: 'l' + Date.now(), user: D.me, date: c.date, nights: c.nights || 1, score: c.score || 0, note: '' }] : [] }); }
   if (action === 'carLog') D.carspots.find(x => x.id === p.spot).logs.push({ id: 'l' + Date.now(), user: D.me, date: p.date, nights: p.nights, score: p.score, note: p.note });
   if (action === 'delCarLog') D.carspots.forEach(c => c.logs = c.logs.filter(l => l.id !== p.id));
+  if (action === 'delVisit') D.visits = D.visits.filter(v => v.id !== p.id);
   if (action === 'delCar') D.carspots = D.carspots.filter(c => c.id !== p.id);
   if (action === 'delTrip') D.trips = D.trips.filter(x => x.id !== p.trip);
   if (action === 'joinTrip') { const t = D.trips.find(x => x.id === p.trip); t.members = p.on ? [...new Set([...t.members, D.me])] : t.members.filter(x => x !== D.me); }
@@ -1096,9 +1100,9 @@ function tripCard(t, compact) {
   if (!t) return `<div class="card ak-empty">다가오는 산행이 없어요<br><button type="button" data-new-trip>산행 만들기</button></div>`;
   const m = MT(t.mt), dd = dday(t.start), n = nights(t);
   const tpl = tplOf(t).flatMap(c => c.items.map(i => i[0])), mine = (t.check[D().me] || []).length;
-  const shared = Object.keys(t.gear), assigned = shared.filter(k => t.gear[k]).length;
+  const shared = [...new Set([...tplOf(t).flatMap(c => c.items.filter(i => i[1]).map(i => i[0])), ...Object.keys(t.gear)])], assigned = shared.filter(k => t.gear[k]).length;
   return `<button class="card trip" type="button" data-trip="${t.id}">
-    <div class="tl"><span class="tag dd">${dd > 0 ? 'D-' + dd : dd === 0 ? '오늘' : '진행 중'}</span><span class="tag">${n ? n + '박 ' + (n + 1) + '일' : '당일'}</span><span class="tag ${t.type === 'car' ? 'warn' : ''}">${t.type === 'car' ? '차박' : '백패킹'}</span><span style="margin-left:auto" class="avs">${t.members.map(av).join('')}</span></div>
+    <div class="tl"><span class="tag dd">${dd > 0 ? 'D-' + dd : dd === 0 ? '오늘' : dday(t.end) < 0 ? '다녀옴' : '진행 중'}</span><span class="tag">${n ? n + '박 ' + (n + 1) + '일' : '당일'}</span><span class="tag ${t.type === 'car' ? 'warn' : ''}">${t.type === 'car' ? '차박' : '백패킹'}</span><span style="margin-left:auto" class="avs">${t.members.map(av).join('')}</span></div>
     <h4>${esc(t.title)}</h4><div class="meta">${esc(m.name)} · ${md(t.start)}${t.end !== t.start ? ' ~ ' + md(t.end) : ''}</div>
     ${compact ? '' : `<div class="pg"><span>내 준비물</span><div class="bar"><i style="width:${Math.round(mine / tpl.length * 100)}%"></i></div><b>${mine}/${tpl.length}</b>
     <span>공동 장비</span><div class="bar"><i style="width:${shared.length ? Math.round(assigned / shared.length * 100) : 0}%"></i></div><b>${assigned}/${shared.length}</b></div>`}</button>`;
@@ -1133,8 +1137,9 @@ function mtTab() {
   const chip = (k, t) => (cnt[k] || k === 'all' || k === F) ? `<button class="chip ${F === k ? 'on' : ''}" type="button" data-mtf="${k}">${t} ${cnt[k]}</button>` : '';
   return `<div class="mapbox" id="mtmap" data-noswipe></div>
   <div class="chips">${chip('all', '전체')}${chip('mine', '다녀온 곳')}${chip('todo', '안 가본 곳')}${chip('camp', '야영지')}</div>
+  <input class="mtq" id="mtq" type="search" placeholder="산 이름 찾기" autocomplete="off">
   <div class="list">${ms.map(m => { const who = [...new Set(D().visits.filter(v => v.mt === m.id).map(v => v.user))], my = myVisits().find(v => v.mt === m.id);
-    return `<div class="card mt ${mine.has(m.id) ? 'done' : ''}" data-mt="${m.id}"><div class="ico">${m.kind === '야영지' ? IC.tent : IC.mt}</div>
+    return `<div class="card mt ${mine.has(m.id) ? 'done' : ''}" data-mt="${m.id}" data-q="${esc((m.name + m.region).replace(/\s/g, ''))}"><div class="ico">${m.kind === '야영지' ? IC.tent : IC.mt}</div>
     <div class="t"><h4>${esc(m.name)}${m.top100 ? '<span class="tag vio">100대 명산</span>' : ''}</h4><p>${esc(m.region)} · ${AppKit.num(m.alt)}m${my ? ' · ' + md(my.date) : ''}</p></div>
     ${who.length ? `<span class="avs">${who.slice(0, 3).map(av).join('')}</span>` : ''}</div>`; }).join('')}</div>
   <button class="btn ghost" type="button" data-add-mt style="margin-top:6px">${IC.plus}목록에 없는 산·야영지 추가</button>
@@ -1197,7 +1202,7 @@ function openMt(id, res) {
   ${res || ''}
   <div class="row2"><button class="btn" type="button" data-check="${id}">${IC.pin}도착 체크</button><button class="btn ghost" type="button" data-shot="${id}">${IC.cam}인증샷</button></div>
   <h3 class="sec">다녀온 사람<small>${vs.length}번</small></h3>
-  ${vs.length ? `<div class="card feed">${vs.map(v => `<div class="fi">${av(v.user)}<div class="t"><b>${esc(P(v.user).name)}</b><small>${md(v.date)}${v.nights ? ' · ' + v.nights + '박' : ''}</small></div>${v.verified ? '<span class="tag go">인증됨</span>' : '<span class="tag">기록만</span>'}</div>`).join('')}</div>` : '<div class="ak-empty">아직 아무도 다녀오지 않았어요</div>'}
+  ${vs.length ? `<div class="card feed">${vs.map(v => `<div class="fi">${av(v.user)}<div class="t"><b>${esc(P(v.user).name)}</b><small>${md(v.date)}${v.nights ? ' · ' + v.nights + '박' : ''}</small></div>${v.verified ? '<span class="tag go">인증됨</span>' : '<span class="tag">기록만</span>'}${v.user === D().me ? `<button class="btn sm ghost" type="button" data-del-visit="${v.id}">지우기</button>` : ''}</div>`).join('')}</div>` : '<div class="ak-empty">아직 아무도 다녀오지 않았어요</div>'}
   ${ps.length ? `<h3 class="sec">인증샷<small>${ps.length}장</small></h3><div class="pgrid">${ps.map(ph).join('')}</div>` : ''}
   <h3 class="sec">다녀온 날 기록<small>지난 산행</small></h3>
   <div class="addrow"><input type="date" id="pastDate" value="${today()}" max="${today()}"><button class="btn sm" type="button" data-past="${id}">기록만 남기기</button></div>
@@ -1595,6 +1600,7 @@ document.addEventListener('click', async e => {
     S.data = await api('addMt', { mt: { name, kind: document.getElementById('amKind').value, alt: +document.getElementById('amAlt').value || 0, lat: S.newPos.lat, lon: S.newPos.lon, region: '직접 추가', top100: false } });
     sheet.close(); AppKit.toast(josa(name, '을', '를') + ' 추가했어요'); return tabs.redraw();
   }
+  if ((b = q('[data-del-visit]'))) { if (!AppKit.sure(b, '지울까요?')) return; S.data = await api('delVisit', { id: b.dataset.delVisit }); save(); AppKit.toast('기록을 지웠어요'); openMt(S.cur); return tabs.redraw(); }
   if ((b = q('[data-setpos]'))) { const id = b.dataset.setpos; S.data = await api('addMt', { id, mt: { name: MT(id).name, lat: S.newPos.lat, lon: S.newPos.lon } }); save(); AppKit.toast('좌표를 저장했어요. 이제 도착 체크를 눌러 주세요'); return openMt(id); }
   if ((b = q('[data-past]'))) { const d = document.getElementById('pastDate').value; if (!d || d > today()) return AppKit.toast('날짜를 확인해 주세요');
     S.data = await api('checkin', { mt: b.dataset.past, verified: false, date: d }); save(); AppKit.toast(md(d) + ' 기록을 남겼어요'); openMt(b.dataset.past); return tabs.redraw(); }
@@ -1613,6 +1619,7 @@ document.addEventListener('click', async e => {
   if (q('#bell')) { if ((D().admin?.pending || []).length) return tabs.go('set'); return AppKit.toast('새 소식이 없어요'); }
   if (q('#refresh')) return refresh();
 });
+document.addEventListener('input', e => { if (e.target.id !== 'mtq') return; const q = e.target.value.replace(/\s/g, ''); document.querySelectorAll('.list [data-q]').forEach(c => c.hidden = !!q && !c.dataset.q.includes(q)); });
 ['pickCam', 'pickAlb'].forEach(id => document.getElementById(id).addEventListener('change', e => { onPicked(e.target.files[0]); e.target.value = ''; }));
 
 /* ── 불러오기 ── */
