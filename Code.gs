@@ -10,12 +10,20 @@ const SHEETS = {
   '회원': ['id', 'name', 'pinHash', 'token', 'role', 'status', 'color', 'at', 'lastAt'],
   '산': ['id', 'name', 'region', 'alt', 'lat', 'lon', 'top100', 'kind', 'by', 'code'],
   '기록': ['id', 'user', 'mt', 'date', 'verified', 'dist', 'nights', 'at'],
-  '산행': ['id', 'title', 'mt', 'start', 'end', 'members', 'gear', 'check', 'by', 'at'],
+  '산행': ['id', 'title', 'mt', 'start', 'end', 'members', 'gear', 'check', 'by', 'at', 'type'],
+  '차박지': ['id', 'name', 'region', 'lat', 'lon', 'floor', 'fee', 'cook', 'water', 'toilet', 'level', 'note', 'by', 'at'],
+  '차박기록': ['id', 'spot', 'user', 'date', 'nights', 'score', 'note', 'at'],
+  '화장실좌표': ['id', 'lat', 'lon', 'ok', 'at'],
   '사진': ['id', 'user', 'mt', 'date', 'file', 'thumb', 'at'],
   '설정': ['key', 'value'],
   '접속': ['at', 'user', 'dev', 'via', 'action'],
 };
 const COLORS = ['#4f93c9', '#e0806a', '#9b7fd1', '#5aa57a', '#d6a33c', '#d46a9a', '#3fa5a5', '#8a8f3c', '#c9643c', '#6a7fd4'];
+const CAR_TEMPLATE = [
+  { cat: '잠자리', items: [['차량용 매트'], ['침낭'], ['베개'], ['암막 커튼·가림막'], ['방충망']] },
+  { cat: '전기·난방', items: [['대용량 파워뱅크', 1], ['전기요'], ['무시동 히터', 1], ['랜턴']] },
+  { cat: '안전', items: [['일산화탄소 경보기'], ['환기용 창문 틈막이'], ['소화기', 1], ['비상 휴대용 변기']] },
+  { cat: '기타', items: [['물·물티슈'], ['쓰레기봉투'], ['수평계 앱 확인']] }];
 const TEMPLATE = [
   { cat: '잠자리', items: [['텐트', 1], ['침낭'], ['매트'], ['베개'], ['그라운드시트', 1]] },
   { cat: '주방', items: [['버너', 1], ['가스', 1], ['코펠', 1], ['수저·컵'], ['라이터']] },
@@ -25,6 +33,19 @@ const TEMPLATE = [
   { cat: '기타', items: [['쓰레기봉투'], ['물티슈·휴지'], ['랜턴', 1]] }];
 
 /* ── 처음 한 번 ── */
+const SCHEMA = 2;
+function migrate_() {
+  const P = PropertiesService.getScriptProperties();
+  if (+P.getProperty('SCHEMA') === SCHEMA) return;
+  Object.keys(SHEETS).forEach(n => {
+    let sh = ss_().getSheetByName(n);
+    if (!sh) { sh = ss_().insertSheet(n); sh.appendRow(SHEETS[n]); sh.setFrozenRows(1); sh.getRange(1, 1, 1000, SHEETS[n].length).setNumberFormat('@'); return; }
+    const h = sh.getRange(1, 1, 1, Math.max(1, sh.getLastColumn())).getValues()[0];
+    SHEETS[n].forEach((k, i) => { if (h[i] !== k) sh.getRange(1, i + 1).setValue(k); });
+  });
+  if (!getSetting_('carTemplate', null)) setSetting_('carTemplate', CAR_TEMPLATE);
+  P.setProperty('SCHEMA', String(SCHEMA)); sh0_ = {}; rowsDirty_();
+}
 function setup() {
   const P = PropertiesService.getScriptProperties();
   let ss = P.getProperty('SHEET_ID') ? SpreadsheetApp.openById(P.getProperty('SHEET_ID')) : null;
@@ -37,6 +58,8 @@ function setup() {
   const first = ss.getSheetByName('Sheet1') || ss.getSheetByName('시트1'); if (first && ss.getSheets().length > 1) ss.deleteSheet(first);
   if (!P.getProperty('FOLDER_ID')) P.setProperty('FOLDER_ID', DriveApp.createFolder('산도장 사진').getId());
   if (!getSetting_('template', null)) setSetting_('template', TEMPLATE);
+  PropertiesService.getScriptProperties().deleteProperty('SCHEMA'); migrate_();
+  if (prop_('DATA_GO_KR_KEY')) installParkingTrigger_();
   console.log('✓ 준비 끝\n서버 주소: ' + ScriptApp.getService().getUrl() + '\n자료 시트: ' + ss.getUrl() +
     '\n사진 폴더: https://drive.google.com/drive/folders/' + P.getProperty('FOLDER_ID') +
     '\n앱 설정 탭의 "서버 주소" 칸에 위 서버 주소(/exec 로 끝남)를 넣고, 처음 가입하는 사람이 관리자가 돼요.');
@@ -61,11 +84,13 @@ function handle_(q) {
     if (!me) return { ok: false, code: 'auth', message: '다시 로그인해 주세요' };
     if (me.status === 'pending') return { ok: false, code: 'pending', message: '관리자 승인을 기다리고 있어요' };
     if (me.status !== 'active') return { ok: false, code: 'auth', message: '쓸 수 없는 계정이에요. 관리자에게 물어봐 주세요' };
-    touch_(me, q);
+    migrate_(); touch_(me, q);
     const W = { checkin: checkin_, photo: photo_, delPhoto: delPhoto_, check: check_, gear: gear_, trip: trip_, delTrip: delTrip_, joinTrip: joinTrip_,
-      approve: approve_, reject: reject_, addMt: addMt_, template: template_, setting: settingSet_, delVisit: delVisit_ };
+      approve: approve_, addCar: addCar_, carLog: carLog_, delCar: delCar_, delCarLog: delCarLog_, reject: reject_, addMt: addMt_, template: template_, setting: settingSet_, delVisit: delVisit_ };
     if (a === 'load') return { ok: true, data: load_(me) };
     if (a === 'img') return { ok: true, data: img_(me, q) };
+    if (a === 'near') return { ok: true, data: near_(me, q) };
+    if (a === 'weather') return { ok: true, data: weather_(+q.lat, +q.lon) };
     if (W[a]) {
       const lock = LockService.getScriptLock(); lock.waitLock(20000);
       try { W[a](me, q); SpreadsheetApp.flush(); rowsDirty_(); } finally { lock.releaseLock(); }
@@ -132,11 +157,14 @@ function load_(me) {
   const visits = rows_('기록').map(v => ({ id: v.id, user: v.user, mt: v.mt, date: v.date, verified: v.verified === 'true' || v.verified === true, nights: +v.nights || 0,
     dist: v.user === me.id && v.dist !== '' ? +v.dist : undefined }));
   const trips = rows_('산행').map(t => ({ id: t.id, title: t.title, mt: t.mt, start: t.start, end: t.end, by: t.by,
-    members: String(t.members || '').split(',').filter(String), gear: json_(t.gear, {}), check: json_(t.check, {}) }));
+    type: t.type === 'car' ? 'car' : 'back', members: String(t.members || '').split(',').filter(String), gear: json_(t.gear, {}), check: json_(t.check, {}) }));
+  const logs = rows_('차박기록');
+  const carspots = rows_('차박지').map(c => ({ id: c.id, name: c.name, region: c.region, lat: +c.lat, lon: +c.lon, floor: c.floor, fee: c.fee, cook: c.cook, water: c.water, toilet: c.toilet, level: c.level, note: c.note, by: c.by,
+    logs: logs.filter(l => l.spot === c.id).map(l => ({ id: l.id, user: l.user, date: l.date, nights: +l.nights || 0, score: +l.score || 0, note: l.note })) }));
   const photos = rows_('사진').map(p => ({ id: p.id, user: p.user, mt: p.mt, date: p.date }));
   const mountains = rows_('산').map(m => ({ id: m.id, name: m.name, region: m.region, alt: +m.alt || 0, lat: m.lat === '' ? null : +m.lat, lon: m.lon === '' ? null : +m.lon,
     top100: m.top100 === 'true' || m.top100 === true, kind: m.kind || '산' }));
-  const data = { me: me.id, today: Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd'), people, mountains, visits, trips, photos,
+  const data = { me: me.id, today: Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd'), people, mountains, visits, trips, photos, carspots, carTemplate: getSetting_('carTemplate', CAR_TEMPLATE),
     template: getSetting_('template', TEMPLATE), radius: +getSetting_('radius', 300) };
   if (admin) data.admin = { pending: us.filter(u => u.status === 'pending').map(u => ({ id: u.id, name: u.name, at: String(u.at).slice(0, 16).replace('T', ' ') })) };
   return data;
@@ -193,7 +221,7 @@ function trip_(me, q) {
   const t = q.trip || {};
   if (!t.mt || !/^\d{4}-\d\d-\d\d$/.test(t.start) || !/^\d{4}-\d\d-\d\d$/.test(t.end) || t.end < t.start) throw new Error('날짜를 확인해 주세요');
   const members = [...new Set([me.id].concat(t.members || []))].join(',');
-  append_('산행', { id: newId_('t'), title: String(t.title || '').slice(0, 40), mt: t.mt, start: t.start, end: t.end, members, gear: '{}', check: '{}', by: me.id, at: now_() });
+  append_('산행', { id: newId_('t'), title: String(t.title || '').slice(0, 40), mt: t.mt, start: t.start, end: t.end, members, gear: '{}', check: '{}', by: me.id, at: now_(), type: t.type === 'car' ? 'car' : 'back' });
 }
 function delTrip_(me, q) {
   const t = tripRow_(q.trip); if (t.by !== me.id && me.role !== 'admin') throw new Error('만든 사람만 지울 수 있어요');
@@ -217,9 +245,221 @@ function addMt_(me, q) {
 }
 function template_(me, q) {
   if (!Array.isArray(q.template)) throw new Error('준비물 목록이 이상해요');
-  setSetting_('template', q.template.map(c => ({ cat: String(c.cat).slice(0, 12), items: (c.items || []).map(i => [String(i[0]).slice(0, 20)].concat(i[1] ? [1] : [])) })));
+  setSetting_(q.kind === 'car' ? 'carTemplate' : 'template', q.template.map(c => ({ cat: String(c.cat).slice(0, 12), items: (c.items || []).map(i => [String(i[0]).slice(0, 20)].concat(i[1] ? [1] : [])) })));
 }
 function settingSet_(me, q) { admin_(me); if (q.radius) setSetting_('radius', Math.max(100, Math.min(1000, +q.radius))); }
+
+/* ── 주변 정보: 화장실·주차장·차박지 ──
+   화장실: 저장소 data/wc/<지역코드>.json (전국공중화장실표준데이터, 좌표 없음) → 산 근처 시·군·구 것만 주소를 좌표로 바꿔(구글 지오코더) 시트 '화장실좌표'에 기억.
+           한 번에 25곳까지만 바꾸고(실행 시간·하루 한도), 남은 수를 앱에 알려 주면 앱이 다시 부른다.
+   주차장: 전국주차장정보표준데이터 API 를 일주일에 한 번 통째로 받아 드라이브 파일(parking.json)에 둔다.
+   '내 위치' 근처를 찾을 때 받은 좌표는 찾기에만 쓰고 저장하지 않는다. */
+const PAGES_URL = 'https://friese8807.github.io/sandojang/';
+const WC_KW = /산|등산|공원|휴양림|캠핑|야영|오토|주차|해수욕|해변|유원지|계곡|쉼터|전망|정상|약수|숲|둘레길|자연|관광|휴게|생태|수목원|저수지|댐|섬|항|포구|폭포|사찰|사$|암$|성$|광장|탐방|매표|입구|고개|재$|령$/;
+function near_(me, q) {
+  const lat = +q.lat, lon = +q.lon;
+  if (!(lat > 32 && lat < 39.5 && lon > 124 && lon < 132)) throw new Error('위치를 확인해 주세요');
+  const t0 = Date.now(), out = { wc: [], pk: [], car: [], left: 0, more: 0, note: [] };
+  // 1) 이 근처 시·군·구 (산은 기억, 내 위치는 기억하지 않음)
+  let areas = q.mt ? getSetting_('area:' + q.mt, null) : null;
+  if (!areas) { areas = areasNear_(lat, lon); if (q.mt) setSetting_('area:' + q.mt, areas); }
+  // 2) 화장실
+  try {
+    const have = {}; rows_('화장실좌표').forEach(r => have[r.id] = r);
+    const todo = [];
+    areas.codes.forEach(code => {
+      const list = wcList_(code);
+      list.forEach(w => {
+        const id = w[0], c = have[id];
+        if (c) { if (c.ok === '1') { const km = km_(lat, lon, +c.lat, +c.lon); if (km <= 5) out.wc.push(wcOut_(w, +c.lat, +c.lon, km)); } return; }
+        if (w[1] === '개방' && !WC_KW.test(w[2])) return;   // 가게·관공서 개방화장실은 산 근처 후보에서 뺀다
+        todo.push({ w, pri: areas.dong.some(d => (w[3] + ' ' + w[4]).includes(d)) ? 0 : 1 });
+      });
+    });
+    todo.sort((a, b) => a.pri - b.pri);
+    const geo = Maps.newGeocoder().setRegion('kr').setLanguage('ko'), rows = [];
+    // 같은 읍·면·동 먼저 다 찾고, 시·군 전체는 '더 넓게 찾기'(q.all)를 눌렀을 때만 (구글 주소 변환은 하루 한도가 있다)
+    const go = q.all ? todo : todo.filter(x => x.pri === 0);
+    for (const { w } of go) {
+      if (rows.length >= 25 || Date.now() - t0 > 15000) break;
+      let p = null;
+      for (const a of [w[3], w[4]].filter(String)) { try { const r = geo.geocode(a); const g = r.results && r.results[0]; if (g) { p = g.geometry.location; break; } } catch (e) { out.note.push('주소 변환 한도'); break; } }
+      rows.push([w[0], p ? p.lat : '', p ? p.lng : '', p ? '1' : '0', now_()]);
+      if (p) { const km = km_(lat, lon, p.lat, p.lng); if (km <= 5) out.wc.push(wcOut_(w, p.lat, p.lng, km)); }
+    }
+    if (rows.length) { const sh = sh_('화장실좌표'); sh.getRange(sh.getLastRow() + 1, 1, rows.length, 5).setNumberFormat('@').setValues(rows); rowsDirty_('화장실좌표'); }
+    out.left = Math.max(0, go.length - rows.length); out.more = q.all ? 0 : todo.filter(x => x.pri === 1).length;
+  } catch (e) { out.note.push('화장실: ' + e.message); }
+  out.wc.sort((a, b) => a.km - b.km); out.wc = out.wc.slice(0, 30);
+  // 3) 주차장
+  try {
+    const pk = parkingAll_();
+    if (!pk) out.note.push(prop_('DATA_GO_KR_KEY') ? '주차장 자료를 받는 중이에요. 몇 분 뒤 다시 봐 주세요' : '주차장: 공공데이터 인증키가 아직 없어요');
+    else out.pk = pk.map(p => ({ name: p[0], type: p[1], lots: p[2], fee: p[3], feeD: p[4], hours: p[5], tel: p[6], lat: p[7], lon: p[8], addr: p[9], km: km_(lat, lon, p[7], p[8]) }))
+      .filter(p => p.km <= 5).sort((a, b) => a.km - b.km).slice(0, 20);
+  } catch (e) { out.note.push('주차장: ' + e.message); }
+  // 4) 차박지 (우리가 남긴 곳)
+  out.car = rows_('차박지').map(c => ({ id: c.id, km: km_(lat, lon, +c.lat, +c.lon) })).filter(c => c.km <= 30).sort((a, b) => a.km - b.km);
+  out.areas = areas.names;
+  return out;
+}
+const km_ = (a, b, c, d) => { const r = Math.PI / 180, x = Math.sin((c - a) * r / 2) ** 2 + Math.cos(a * r) * Math.cos(c * r) * Math.sin((d - b) * r / 2) ** 2; return 12742 * Math.asin(Math.sqrt(x)); };
+function wcOut_(w, lat, lon, km) {
+  return { id: w[0], kind: w[1] + '화장실', name: w[2], addr: w[3] || w[4], m: w[5], u: w[6], w: w[7], dm: w[8], dw: w[9], org: w[10], tel: w[11], open: w[12], openD: w[13], bell: w[14], cctv: w[15], baby: w[16], lat, lon, km: Math.round(km * 100) / 100 };
+}
+/* 지역 파일은 GitHub Pages 에서 받아 6시간 기억 (100KB 넘으면 나눠서) */
+let wcMem_ = {};
+function wcList_(code) {
+  if (wcMem_[code]) return wcMem_[code];
+  const C = CacheService.getScriptCache(), n = +C.get('wc:' + code + ':n');
+  let txt = '';
+  if (n) { const parts = C.getAll([...Array(n).keys()].map(i => 'wc:' + code + ':' + i)); if (Object.keys(parts).length === n) txt = [...Array(n).keys()].map(i => parts['wc:' + code + ':' + i]).join(''); }
+  if (!txt) {
+    const r = UrlFetchApp.fetch(PAGES_URL + 'data/wc/' + code + '.json', { muteHttpExceptions: true });
+    if (r.getResponseCode() !== 200) return (wcMem_[code] = []);
+    txt = r.getContentText('UTF-8');
+    const ch = {}, k = Math.ceil(txt.length / 90000); for (let i = 0; i < k; i++) ch['wc:' + code + ':' + i] = txt.slice(i * 90000, (i + 1) * 90000);
+    try { C.putAll(ch, 21600); C.put('wc:' + code + ':n', String(k), 21600); } catch (e) {}
+  }
+  return (wcMem_[code] = JSON.parse(txt));
+}
+/* 가운데와 사방 3km 지점의 주소로 시·군·구를 찾는다 (경계에 걸친 산: 선자령=평창·강릉) */
+function areasNear_(lat, lon) {
+  const idx = JSON.parse(UrlFetchApp.fetch(PAGES_URL + 'data/wc/index.json').getContentText('UTF-8')).areas;
+  const geo = Maps.newGeocoder().setRegion('kr').setLanguage('ko'), d = .027;
+  const codes = {}, names = {}, dong = {};
+  [[0, 0], [d, 0], [-d, 0], [0, d * 1.25], [0, -d * 1.25]].forEach(([a, b], i) => {
+    let res; try { res = geo.reverseGeocode(lat + a, lon + b); } catch (e) { return; }
+    const g = res.results && res.results[0]; if (!g) return;
+    const comp = g.address_components || [], get = t => (comp.find(c => c.types.indexOf(t) >= 0) || {}).long_name || '';
+    const sido = get('administrative_area_level_1'), sgg = get('locality') || get('sublocality_level_1') || get('administrative_area_level_2');
+    const gu = get('sublocality_level_1');
+    Object.keys(idx).forEach(code => {
+      const nm = idx[code];
+      if (sgg && nm.includes(sgg) && (!sido || nm.slice(0, 2) === sido.slice(0, 2)) && (!gu || gu === sgg || nm.includes(gu))) { codes[code] = 1; names[nm] = 1; }
+    });
+    if (i === 0) { const dd = get('sublocality_level_2') || get('sublocality_level_1'); if (dd) dong[dd] = 1; }
+  });
+  return { codes: Object.keys(codes), names: Object.keys(names), dong: Object.keys(dong) };
+}
+/* ── 주차장 (전국주차장정보표준데이터) ── 필드 이름이 조금 달라도 찾아 쓴다. 먼저 debugParking() 으로 응답 확인 */
+const PARK_URL = 'https://api.data.go.kr/openapi/tn_pubr_prkplce_info_api';
+function parkingFetch_(page, rows) {
+  const key = prop_('DATA_GO_KR_KEY'); if (!key) throw new Error('스크립트 속성 DATA_GO_KR_KEY 에 공공데이터포털 인증키를 넣어 주세요');
+  const url = (prop_('PARK_URL') || PARK_URL) + '?serviceKey=' + encodeURIComponent(key) + '&pageNo=' + page + '&numOfRows=' + rows + '&type=json';
+  let res = null; for (let i = 0; i < 3 && !res; i++) { try { res = UrlFetchApp.fetch(url, { muteHttpExceptions: true }); } catch (e) { Utilities.sleep(2000 * (i + 1)); } }
+  if (!res) throw new Error('주차장 API 연결 실패');
+  const txt = res.getContentText(); let j;
+  try { j = JSON.parse(txt); } catch (e) { throw new Error('JSON 이 아닌 응답 (' + res.getResponseCode() + '): ' + txt.slice(0, 300).replace(/serviceKey=[^&\s]+/g, 'serviceKey=***')); }
+  if (j.OpenAPI_ServiceResponse) throw new Error('인증 오류: ' + JSON.stringify(j.OpenAPI_ServiceResponse.cmmMsgHeader));
+  const b = (j.response || j).body || {}, h = (j.response || j).header || {};
+  if (h.resultCode && h.resultCode !== '00') throw new Error('주차장 API: ' + h.resultCode + ' ' + (h.resultMsg || ''));
+  const it = b.items && (b.items.item || b.items);
+  return { items: Array.isArray(it) ? it : it ? [it] : [], total: +b.totalCount || 0 };
+}
+function debugParking() { const r = parkingFetch_(1, 3); console.log('전체 ' + r.total + '곳, 첫 줄:\n' + JSON.stringify(r.items[0], null, 1)); }
+function syncParking() {
+  const pick = (o, re) => { const k = Object.keys(o).find(k => re.test(k)); return k ? String(o[k] == null ? '' : o[k]).trim() : ''; };
+  let page = 1, all = [], total = 0;
+  do { const r = parkingFetch_(page, 1000); total = r.total; all = all.concat(r.items); page++; if (!r.items.length) break; } while (all.length < total && page < 60);
+  const out = all.map(o => {
+    const lat = +pick(o, /^latitude$|위도/i), lon = +pick(o, /^longitude$|경도/i);
+    if (!(lat > 32 && lat < 39.5 && lon > 124 && lon < 132)) return null;
+    const fee = pick(o, /parkingchrgeInfo|요금정보/i), bt = pick(o, /basicTime|기본시간/i), bc = pick(o, /basicCharge|기본요금/i), day = pick(o, /dayCmmtkt$|1일주차권요금$/i);
+    const feeD = fee === '무료' ? '' : [bt && bc ? bt + '분 ' + Number(bc).toLocaleString() + '원' : '', day && day !== '0' ? '하루 ' + Number(day).toLocaleString() + '원' : ''].filter(String).join(' · ');
+    const o1 = pick(o, /weekdayOperOpenHhmm|평일운영시작/i), o2 = pick(o, /weekdayOperColseHhmm|weekdayOperCloseHhmm|평일운영종료/i);
+    return [pick(o, /prkplceNm|주차장명/i), pick(o, /prkplceSe|주차장구분/i), +pick(o, /prkcmprt|주차구획수/i) || 0, fee || '-', feeD,
+      o1 && o2 ? (o1 === '00:00' && /^(00:00|23:59|24:00)$/.test(o2) ? '24시간' : o1 + '~' + o2) : '', pick(o, /phoneNumber|전화번호/i), Math.round(lat * 1e5) / 1e5, Math.round(lon * 1e5) / 1e5, pick(o, /rdnmadr|소재지도로명주소/i) || pick(o, /lnmadr|지번/i)];
+  }).filter(Boolean);
+  const blob = Utilities.newBlob(JSON.stringify(out), 'application/json', 'parking.json'), id = prop_('PARK_FILE');
+  let f = null; if (id) { try { f = DriveApp.getFileById(id); f.setContent(blob.getDataAsString()); } catch (e) { f = null; } }
+  if (!f) { f = DriveApp.getFolderById(prop_('FOLDER_ID')).createFile(blob); PropertiesService.getScriptProperties().setProperty('PARK_FILE', f.getId()); }
+  PropertiesService.getScriptProperties().setProperty('PARK_AT', now_());
+  CacheService.getScriptCache().remove('pk:n');
+  console.log('✓ 주차장 ' + out.length + '곳 저장 (받은 자료 ' + all.length + '건)');
+}
+function installParkingTrigger_() {
+  if (ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === 'syncParking')) return;
+  ScriptApp.newTrigger('syncParking').timeBased().everyWeeks(1).onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(4).create();
+  ScriptApp.newTrigger('syncParking').timeBased().after(60 * 1000).create();   // 처음 한 번은 바로
+}
+let pkMem_ = null;
+function parkingAll_() {
+  if (pkMem_) return pkMem_;
+  const id = prop_('PARK_FILE');
+  if (!id) { if (prop_('DATA_GO_KR_KEY')) try { installParkingTrigger_(); } catch (e) {} return null; }
+  return (pkMem_ = JSON.parse(DriveApp.getFileById(id).getBlob().getDataAsString()));
+}
+/* ── 날씨 (기상청 단기예보) ── 5km 격자 기준이라 정상은 이보다 추워요(100m 오를 때 약 0.6도) */
+function grid_(lat, lon) {
+  const RE = 6371.00877 / 5.0, SL1 = 30 * Math.PI / 180, SL2 = 60 * Math.PI / 180, OLON = 126 * Math.PI / 180, OLAT = 38 * Math.PI / 180, r = Math.PI / 180;
+  let sn = Math.log(Math.cos(SL1) / Math.cos(SL2)) / Math.log(Math.tan(Math.PI * .25 + SL2 * .5) / Math.tan(Math.PI * .25 + SL1 * .5));
+  let sf = Math.pow(Math.tan(Math.PI * .25 + SL1 * .5), sn) * Math.cos(SL1) / sn, ro = RE * sf / Math.pow(Math.tan(Math.PI * .25 + OLAT * .5), sn);
+  let ra = RE * sf / Math.pow(Math.tan(Math.PI * .25 + lat * r * .5), sn), th = lon * r - OLON;
+  if (th > Math.PI) th -= 2 * Math.PI; if (th < -Math.PI) th += 2 * Math.PI; th *= sn;
+  return [Math.floor(ra * Math.sin(th) + 43 + .5), Math.floor(ro - ra * Math.cos(th) + 136 + .5)];
+}
+function weather_(lat, lon) {
+  if (!(lat > 32 && lat < 39.5)) throw new Error('위치를 확인해 주세요');
+  const [nx, ny] = grid_(lat, lon), C = CacheService.getScriptCache(), ck = 'wx:' + nx + ',' + ny, hit = C.get(ck);
+  if (hit) return JSON.parse(hit);
+  const key = prop_('KMA_KEY') || prop_('DATA_GO_KR_KEY'); if (!key) throw new Error('날씨: 공공데이터 인증키가 아직 없어요');
+  // 발표 시각: 02·05·08·11·14·17·20·23시 (+10분 뒤 나옴)
+  const now = new Date(Date.now() - 15 * 60e3), kst = new Date(now.getTime() + 9 * 36e5);
+  let h = kst.getUTCHours(), bd = new Date(kst); const hs = [23, 20, 17, 14, 11, 8, 5, 2];
+  let bh = hs.find(x => x <= h); if (bh == null) { bh = 23; bd = new Date(kst.getTime() - 864e5); }
+  const ymd = Utilities.formatDate(bd, 'UTC', 'yyyyMMdd'), bt = ('0' + bh).slice(-2) + '00';
+  const url = 'https://apis.data.go.kr/1360000/VilageFcstInfoService_2.0/getVilageFcst?serviceKey=' + encodeURIComponent(key) + '&pageNo=1&numOfRows=1000&dataType=JSON&base_date=' + ymd + '&base_time=' + bt + '&nx=' + nx + '&ny=' + ny;
+  let res = null; for (let i = 0; i < 3 && !res; i++) { try { res = UrlFetchApp.fetch(url, { muteHttpExceptions: true }); } catch (e) { Utilities.sleep(1500 * (i + 1)); } }
+  if (!res) throw new Error('기상청 연결 실패');
+  let j; try { j = JSON.parse(res.getContentText()); } catch (e) { throw new Error('기상청 응답을 읽지 못했어요 (' + res.getResponseCode() + ')'); }
+  if (j.OpenAPI_ServiceResponse) throw new Error('기상청 인증 오류: ' + JSON.stringify(j.OpenAPI_ServiceResponse.cmmMsgHeader));
+  const hd = j.response && j.response.header; if (hd && hd.resultCode !== '00') throw new Error('기상청: ' + hd.resultMsg);
+  const items = (((j.response || {}).body || {}).items || {}).item || [];
+  const T = {}; items.forEach(x => { const k = x.fcstDate + x.fcstTime; (T[k] = T[k] || { d: x.fcstDate, t: x.fcstTime })[x.category] = x.fcstValue; });
+  const hours = Object.keys(T).sort().map(k => T[k]), days = {};
+  hours.forEach(x => {
+    const d = days[x.d] = days[x.d] || { d: x.d, min: 99, max: -99, pop: 0, wsd: 0, sky: 0, pty: 0 };
+    if (x.TMP != null) { d.min = Math.min(d.min, +x.TMP); d.max = Math.max(d.max, +x.TMP); }
+    if (x.TMN != null) d.min = Math.min(d.min, +x.TMN); if (x.TMX != null) d.max = Math.max(d.max, +x.TMX);
+    d.pop = Math.max(d.pop, +x.POP || 0); d.wsd = Math.max(d.wsd, +x.WSD || 0); d.sky = Math.max(d.sky, +x.SKY || 0); if (+x.PTY) d.pty = +x.PTY;
+  });
+  const out = { at: ymd + bt, nx, ny, now: hours[0] ? { t: +hours[0].TMP, sky: +hours[0].SKY, pty: +hours[0].PTY, pop: +hours[0].POP, wsd: +hours[0].WSD, reh: +hours[0].REH } : null,
+    days: Object.keys(days).sort().slice(0, 4).map(k => days[k]),
+    hours: hours.slice(0, 30).map(x => ({ d: x.d, t: x.t, tmp: +x.TMP, sky: +x.SKY, pty: +x.PTY, pop: +x.POP, wsd: +x.WSD })) };
+  try { C.put(ck, JSON.stringify(out), 3600); } catch (e) {}
+  return out;
+}
+/* ── 차박지 ── 장소 좌표는 '이 자리를 차박지로 남기기'를 누른 사람이 일부러 올린 것만 */
+function addCar_(me, q) {
+  const c = q.car || {}, name = String(c.name || '').trim().slice(0, 30), lat = +c.lat, lon = +c.lon;
+  if (!name) throw new Error('이름을 넣어 주세요');
+  if (!(lat > 32 && lat < 39.5 && lon > 124 && lon < 132)) throw new Error('우리나라 안의 좌표가 아니에요');
+  const pick = (v, ok) => ok.indexOf(v) >= 0 ? v : '';
+  const id = newId_('c');
+  append_('차박지', { id, name, region: String(c.region || '').slice(0, 20), lat: Math.round(lat * 1e5) / 1e5, lon: Math.round(lon * 1e5) / 1e5,
+    floor: pick(c.floor, ['아스팔트', '파쇄석', '흙', '잔디', '모래']), fee: pick(c.fee, ['무료', '유료']), cook: pick(c.cook, ['취사 가능', '취사 금지', '모름']),
+    water: pick(c.water, ['개수대 있음', '개수대 없음']), toilet: String(c.toilet || '').slice(0, 30), level: pick(c.level, ['평탄', '약간 경사', '경사']),
+    note: String(c.note || '').slice(0, 300), by: me.id, at: now_() });
+  if (c.date) carLog_(me, { spot: id, date: c.date, nights: c.nights, score: c.score, note: '' });
+}
+function carLog_(me, q) {
+  if (!rows_('차박지').some(c => c.id === q.spot)) throw new Error('없는 차박지예요');
+  const now = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd'), date = /^\d{4}-\d\d-\d\d$/.test(q.date || '') && q.date <= now ? q.date : now;
+  append_('차박기록', { id: newId_('l'), spot: q.spot, user: me.id, date, nights: Math.max(0, Math.min(30, +q.nights || 1)), score: Math.max(0, Math.min(5, +q.score || 0)), note: String(q.note || '').slice(0, 300), at: now_() });
+}
+function delCar_(me, q) {
+  const c = rows_('차박지').find(x => x.id === q.id); if (!c) return;
+  if (c.by !== me.id && me.role !== 'admin') throw new Error('남긴 사람만 지울 수 있어요');
+  rows_('차박기록').filter(l => l.spot === c.id).sort((a, b) => b._row - a._row).forEach(l => del_('차박기록', l._row));
+  del_('차박지', rows_('차박지').find(x => x.id === q.id)._row);
+}
+function delCarLog_(me, q) {
+  const l = rows_('차박기록').find(x => x.id === q.id); if (!l) return;
+  if (l.user !== me.id && me.role !== 'admin') throw new Error('내 기록만 지울 수 있어요');
+  del_('차박기록', l._row);
+}
+function debugWeather() { console.log(JSON.stringify(weather_(37.689, 128.752), null, 1).slice(0, 2000)); }
 
 /* ── 100대 명산 가져오기 (공공데이터포털 '한국등산트레킹지원센터_100대명산' 계열) ──
    응답 모양을 먼저 debugTop100() 으로 확인한다. 필드 이름이 달라도 이름·위도·경도·높이를 찾아 쓴다. */
