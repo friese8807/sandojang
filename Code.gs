@@ -353,7 +353,7 @@ function parkingFetch_(page, rows) {
   try { j = JSON.parse(txt); } catch (e) { throw new Error('JSON 이 아닌 응답 (' + res.getResponseCode() + '): ' + txt.slice(0, 300).replace(/serviceKey=[^&\s]+/g, 'serviceKey=***')); }
   if (j.OpenAPI_ServiceResponse) throw new Error('인증 오류: ' + JSON.stringify(j.OpenAPI_ServiceResponse.cmmMsgHeader));
   const b = (j.response || j).body || {}, h = (j.response || j).header || {};
-  if (h.resultCode && h.resultCode !== '00') throw new Error('주차장 API: ' + h.resultCode + ' ' + (h.resultMsg || ''));
+  if (h.resultCode != null && !/^0+$/.test(String(h.resultCode))) throw new Error('주차장 API: ' + h.resultCode + ' ' + (h.resultMsg || ''));
   const it = b.items && (b.items.item || b.items);
   return { items: Array.isArray(it) ? it : it ? [it] : [], total: +b.totalCount || 0 };
 }
@@ -475,7 +475,7 @@ function top100Fetch_(page, rows) {
     const txt = res.getContentText(); let j;
     try { j = JSON.parse(txt); } catch (e) { last = 'JSON 이 아닌 응답 (' + res.getResponseCode() + '): ' + txt.slice(0, 300).replace(/serviceKey=[^&\s]+/g, 'serviceKey=***'); if (/TIMEOUT/i.test(txt)) continue; throw new Error(last); }
     if (j.OpenAPI_ServiceResponse) { const h = j.OpenAPI_ServiceResponse.cmmMsgHeader || {}; last = '포털 오류: ' + JSON.stringify(h); if (/TIMEOUT/i.test(h.errMsg || '')) continue; throw new Error(last); }
-    const hd = (j.response || j).header || {}; if (hd.resultCode && hd.resultCode !== '00') throw new Error('100대명산 API: ' + hd.resultCode + ' ' + (hd.resultMsg || ''));
+    const hd = (j.response || j).header || {}; if (hd.resultCode != null && !/^0+$/.test(String(hd.resultCode))) throw new Error('100대명산 API: ' + hd.resultCode + ' ' + (hd.resultMsg || ''));
     const body = (j.response || j).body || {}, it = body.items && (body.items.item || body.items);
     return { items: Array.isArray(it) ? it : it ? [it] : [], total: +body.totalCount || 0, raw: j };
   }
