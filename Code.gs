@@ -164,7 +164,9 @@ function load_(me) {
   const photos = rows_('사진').map(p => ({ id: p.id, user: p.user, mt: p.mt, date: p.date }));
   const mountains = rows_('산').map(m => ({ id: m.id, name: m.name, region: m.region, alt: +m.alt || 0, lat: m.lat === '' ? null : +m.lat, lon: m.lon === '' ? null : +m.lon,
     top100: m.top100 === 'true' || m.top100 === true, kind: m.kind || '산' }));
-  const data = { me: me.id, today: Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd'), people, mountains, visits, trips, photos, carspots, carTemplate: getSetting_('carTemplate', CAR_TEMPLATE),
+  // 카카오 지도 JavaScript 키: 화면에 공개되는 키(등록한 주소에서만 동작)라 앱에 보내도 된다. 저장소에는 넣지 않고 스크립트 속성에서
+  const kakao = prop_('KAKAO_KEY') || prop_('KAKAO_JS_KEY') || prop_('KAKAO_JAVASCRIPT_KEY') || '';
+  const data = { kakao, me: me.id, today: Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd'), people, mountains, visits, trips, photos, carspots, carTemplate: getSetting_('carTemplate', CAR_TEMPLATE),
     template: getSetting_('template', TEMPLATE), radius: +getSetting_('radius', 300) };
   if (admin) data.admin = { pending: us.filter(u => u.status === 'pending').map(u => ({ id: u.id, name: u.name, at: String(u.at).slice(0, 16).replace('T', ' ') })) };
   return data;
