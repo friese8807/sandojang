@@ -464,21 +464,29 @@ function debugWeather() { console.log(JSON.stringify(weather_(37.689, 128.752), 
 /* ── 100대 명산 가져오기 (공공데이터포털 '한국등산트레킹지원센터_100대명산' 계열) ──
    응답 모양을 먼저 debugTop100() 으로 확인한다. 필드 이름이 달라도 이름·위도·경도·높이를 찾아 쓴다. */
 const TOP100_URL = 'https://apis.data.go.kr/B553662/top100FamtListBasiInfoService/getTop100FamtListBasiInfoList';
-function top100Fetch_(page) {
+function top100Fetch_(page, rows) {
   const key = prop_('DATA_GO_KR_KEY'); if (!key) throw new Error('스크립트 속성 DATA_GO_KR_KEY 에 공공데이터포털 인증키를 넣어 주세요');
-  const url = (prop_('TOP100_URL') || TOP100_URL) + '?serviceKey=' + encodeURIComponent(key) + '&pageNo=' + page + '&numOfRows=100&type=json&_type=json';
-  const res = UrlFetchApp.fetch(url, { muteHttpExceptions: true }), txt = res.getContentText();
-  let j; try { j = JSON.parse(txt); } catch (e) { throw new Error('JSON 이 아닌 응답 (' + res.getResponseCode() + '): ' + txt.slice(0, 300).replace(/serviceKey=[^&\s]+/g, 'serviceKey=***')); }
-  if (j.OpenAPI_ServiceResponse) throw new Error('인증 오류: ' + JSON.stringify(j.OpenAPI_ServiceResponse.cmmMsgHeader));
-  const body = (j.response || j).body || {}, it = body.items && (body.items.item || body.items);
-  return { items: Array.isArray(it) ? it : it ? [it] : [], total: +body.totalCount || 0, raw: j };
+  const url = (prop_('TOP100_URL') || TOP100_URL) + '?serviceKey=' + encodeURIComponent(key) + '&pageNo=' + page + '&numOfRows=' + (rows || 20) + '&type=json';
+  // 이 기관 서버는 한 번에 많이 달라면 30초 넘게 걸려 포털이 'SERVICETIMEOUT_ERROR'를 준다 → 조금씩, 시간 초과면 쉬었다 다시 (최대 4번)
+  let last = '';
+  for (let i = 0; i < 4; i++) {
+    if (i) Utilities.sleep(3000 * i);
+    let res; try { res = UrlFetchApp.fetch(url, { muteHttpExceptions: true }); } catch (e) { last = '연결 실패: ' + e.message; continue; }
+    const txt = res.getContentText(); let j;
+    try { j = JSON.parse(txt); } catch (e) { last = 'JSON 이 아닌 응답 (' + res.getResponseCode() + '): ' + txt.slice(0, 300).replace(/serviceKey=[^&\s]+/g, 'serviceKey=***'); if (/TIMEOUT/i.test(txt)) continue; throw new Error(last); }
+    if (j.OpenAPI_ServiceResponse) { const h = j.OpenAPI_ServiceResponse.cmmMsgHeader || {}; last = '포털 오류: ' + JSON.stringify(h); if (/TIMEOUT/i.test(h.errMsg || '')) continue; throw new Error(last); }
+    const hd = (j.response || j).header || {}; if (hd.resultCode && hd.resultCode !== '00') throw new Error('100대명산 API: ' + hd.resultCode + ' ' + (hd.resultMsg || ''));
+    const body = (j.response || j).body || {}, it = body.items && (body.items.item || body.items);
+    return { items: Array.isArray(it) ? it : it ? [it] : [], total: +body.totalCount || 0, raw: j };
+  }
+  throw new Error(last + ' — 기관 서버가 응답하지 않아요. 잠시 뒤 다시 실행해 주세요');
 }
-function debugTop100() { const r = top100Fetch_(1); console.log('전체 ' + r.total + '건, 첫 줄:\n' + JSON.stringify(r.items[0], null, 1)); }
+function debugTop100() { const r = top100Fetch_(1, 3); console.log('전체 ' + r.total + '건, 첫 줄:\n' + JSON.stringify(r.items[0], null, 1)); }
 function importTop100() {
   const pick = (o, re) => { const k = Object.keys(o).find(k => re.test(k)); return k ? o[k] : ''; };
   const have = rows_('산'), byName = {}; have.forEach(m => byName[m.name] = m);
   let page = 1, n = 0, all = [];
-  while (page < 10) { const r = top100Fetch_(page); all = all.concat(r.items); if (!r.items.length || all.length >= r.total) break; page++; }
+  while (page < 20) { const r = top100Fetch_(page, 20); all = all.concat(r.items); if (!r.items.length || all.length >= r.total) break; page++; }
   all.forEach(o => {
     const name = String(pick(o, /^(mntn|frtrl|mtn).*nm$|^mntnnm$|name|nm$/i) || '').trim();
     const lat = +pick(o, /^lat|lat$|^la$|ycrd|ypos/i), lon = +pick(o, /^lo?n|lot$|^lo$|lng|xcrd|xpos/i);
