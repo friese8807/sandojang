@@ -35,3 +35,12 @@
 - 화장실 자료에는 좌표가 없어서, 산 근처 읍·면·동 것부터 서버가 주소를 좌표로 바꿔 '화장실좌표' 시트에 기억해요.
 - 주차장은 일주일에 한 번(월 4시) 통째로 받아 드라이브 `parking.json` 에 둬요. 확인: 편집기에서 `debugParking()`.
 - 날씨 확인: `debugWeather()`.
+
+## 데스크톱 미리보기 (Claude 데스크톱 오른쪽 패널)
+
+```bash
+node tools/preview.cjs index.html --out /tmp/preview.html   # 아이폰 틀 · ☀️주간/🌙야간 · 마우스로 끌어서 스크롤 · 서버 없으면 예시 모드
+```
+
+자료 파일로 보기는 `--data 자료.json`(서버 응답 흉내), 시각 고정은 `--now 2026-12-03T07:40`. 미리보기 파일은 저장소 밖에 만든다.
+도구는 friese-mobile-webapp-kit 스킬의 `scripts/preview.cjs` 와 같다.
